@@ -1,9 +1,6 @@
 # This is the data access object to be used with a PostgreSQL implementation
 # of the logger database
 
-from datetime import timedelta
-import csv
-
 from dateutil.parser import parse
 from dateutil.tz import tzoffset as tz
 
@@ -805,8 +802,8 @@ class czoDao(BaseDao):
         
         for row in table:
             datavalue = czo_model.DataValue()
-            datavalue.DataValue = row[0]
-            datavalue.LocalDateTime = row[1]
+            datavalue.DataValue = row[1]
+            datavalue.LocalDateTime = row[0]
             datavalue.MethodID = varResult.MethodID # MethodID was not originally part of datavalue object
             valueResultArr.append(datavalue)            
                     
