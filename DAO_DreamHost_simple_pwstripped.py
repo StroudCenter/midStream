@@ -803,9 +803,11 @@ class czoDao(BaseDao):
         for row in table:
             datavalue = czo_model.DataValue()
             datavalue.DataValue = row[1]
-            datavalue.LocalDateTime = row[0]
+            LocalDateTime_noUTC = row[0]
+            local_time_zone = tz(None, -18000) # Five hours behind UTC, in seconds
+            datavalue.LocalDateTime = LocalDateTime_noUTC.replace(tzinfo=local_time_zone)
             datavalue.MethodID = varResult.MethodID # MethodID was not originally part of datavalue object
-            valueResultArr.append(datavalue)            
+            valueResultArr.append(datavalue)           
                     
         if DEBUG_PRINT:        
             t2 = time.time()
