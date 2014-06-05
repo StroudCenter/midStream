@@ -2,7 +2,12 @@
 # of the logger database
 
 from dateutil.parser import parse
-from dateutil.tz import tzoffset as tz
+from dateutil.tz import tzoffset
+
+from pytz import timezone
+import pytz
+utc = pytz.utc
+eastern = timezone('US/Eastern')
 
 from wof.dao import BaseDao
 import wof.models as wof_base
@@ -13,7 +18,10 @@ import time
 import pymysql
 
 #For MySQL Access
-DB_CONNECT_STR = "host='mysql.swrcsensors.dreamhosters.com',port=3306,db='XXXXX',user='XXXXX',passwd='XXXXX'"
+dbhost = ""
+dbname = ""
+dbuser = ""
+dbpswd = ""
 
 
 # if DEBUG_PRINT is True, lots of information will be printed to the console
@@ -74,7 +82,7 @@ class czoDao(BaseDao):
             print '*get_all_sites'        
 
         # Open a connection to the database
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()
         
         # this will find all the sites that have CURRENT real-time deployments
@@ -104,12 +112,7 @@ class czoDao(BaseDao):
 
         # iterate over the rows in the database
         for row in table:
-            if DEBUG_PRINT:
-                print 'Subquery of get_all_sites:'
-                print '('
             site = self.create_site_from_row(row)
-            if DEBUG_PRINT:
-                print ')'
             sites.append(site)
             if DEBUG_PRINT:
                 print site
@@ -129,7 +132,7 @@ class czoDao(BaseDao):
             return
 
         # Open a connection to the database
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()
 
         # this will find the site by site_code
@@ -151,12 +154,7 @@ class czoDao(BaseDao):
         cur.close()     # close the database cursor
         conn.close()    # close the database connection
 
-        if DEBUG_PRINT:
-            print 'Subquery of get_site_by_code:'
-            print '('
         site = self.create_site_from_row(row)
-        if DEBUG_PRINT:
-            print ')'
         return site
 
     def get_sites_by_codes(self, site_codes_arr):
@@ -172,7 +170,7 @@ class czoDao(BaseDao):
             return []
 
         # Open a connection to the database
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()
 
         sites = []
@@ -195,12 +193,7 @@ class czoDao(BaseDao):
 
             row = cur.fetchone()
             if row:
-                if DEBUG_PRINT:
-                    print 'Subquery of get_sites_by_codes:'
-                    print '('
                 site = self.create_site_from_row(row)
-                if DEBUG_PRINT:
-                    print ')'
                 sites.append(site)
 
         cur.close()     # close the database cursor
@@ -219,7 +212,7 @@ class czoDao(BaseDao):
         variables = []
         
         # Open a connection to the database
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()
         
         # this will return all the variables that 
@@ -322,7 +315,7 @@ class czoDao(BaseDao):
             print '*get_variable_by_code: ' + var_code
 
         # Open a connection to the database
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()
 
         # this will return the variable info
@@ -426,12 +419,7 @@ class czoDao(BaseDao):
         
         vars = []
         for var_code in var_codes_arr:  
-            if DEBUG_PRINT:
-                print 'Subquery of get_variables_by_codes:'
-                print '['
             var1 = self.get_variable_by_code(var_code)
-            if DEBUG_PRINT:
-                print ']'
             vars.append(copy.deepcopy(var1))
         return vars
 
@@ -450,18 +438,13 @@ class czoDao(BaseDao):
         
         series_list = []
         
-        if DEBUG_PRINT:
-            print 'Subquery of get_series_by_sitecode:'
-            print '{'
         site = self.get_site_by_code(site_code)
-        if DEBUG_PRINT:
-            print '}'
         
         if not site:
             return []
 
         # open database, find all of the variable codes available for this site
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()    
         cur.execute("""
         SELECT DISTINCT
@@ -486,18 +469,13 @@ class czoDao(BaseDao):
         for row in table:
             var_code = row[0]
             
-            if DEBUG_PRINT:
-                print 'Subquery of get_series_by_sitecode:'
-                print '{'
             series = self.get_series_by_sitecode_and_varcode(site_code, var_code)
-            if DEBUG_PRINT:
-                print '}'
                 
             series_list.extend(series)
         
         if DEBUG_PRINT:
             number_data_series = len(series_list)
-            print 'Number Data Series Found for this site: %d' % (number_data_series)
+            print 'Number Data Series Found at %s: %d' % (site_code,number_data_series)
 
         return series_list
 
@@ -515,31 +493,18 @@ class czoDao(BaseDao):
             return []
         
         series_list = []
-        if DEBUG_PRINT:
-            print 'Subquery of get_series_by_sitecode_and_varcode:'
-            print '<'
         site = self.get_site_by_code(site_code)
-        if DEBUG_PRINT:
-            print '>'
+        
         if site:
-            if DEBUG_PRINT:
-                print 'Subquery of get_series_by_sitecode_and_varcode:'
-                print '<'
             var = self.get_variable_by_code(var_code)
-            if DEBUG_PRINT:
-                print '>'
+            
             if var:
                 
                 series = czo_model.Series()
-                if DEBUG_PRINT:
-                    print 'Subquery of get_series_by_sitecode_and_varcode:'
-                    print '<'
                 method_list = self.get_methods_by_ids([var.MethodID])
-                if DEBUG_PRINT:
-                    print '>'
                 
                 # open database, the right table name, and column names for the data values
-                conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+                conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
                 cur = conn.cursor()    
                 cur.execute("""
                 SELECT DISTINCT
@@ -558,24 +523,23 @@ class czoDao(BaseDao):
                 conn.close()    # close the database connection
                 
                 table_name = row[0]
-                column_name = row[1]  
+                column_name = row[1] 
+                                
+                local_time_zone = tzoffset(None, -18000) # Five hours behind UTC, in seconds
                 
                 # Looking through tables to get start and end times
+                BDT = self.get_begin_datetime(table_name,column_name)
+                series.BeginDateTime = BDT.replace(tzinfo=local_time_zone)
+                series.BeginDateTimeUTC = series.BeginDateTime.astimezone(pytz.utc)
+                    
+                EDT = self.get_end_datetime(table_name,column_name)
+                series.EndDateTime = EDT.replace(tzinfo=local_time_zone)
+                series.EndDateTimeUTC = series.EndDateTime.astimezone(pytz.utc)
+                
                 if DEBUG_PRINT:
-                    print 'Subquery of get_series_by_sitecode_and_varcode:'
-                    print '<'
-                series.BeginDateTime = self.get_begin_datetime(table_name,column_name)
-                if DEBUG_PRINT:
-                    print '>'
-                if DEBUG_PRINT:
-                    print 'Subquery of get_series_by_sitecode_and_varcode:'
-                    print '<'
-                series.EndDateTime = self.get_end_datetime(table_name,column_name)
-                if DEBUG_PRINT:
-                    print '>'
-                series.BeginDateTimeUTC = '2013-01-01T05:00:00Z'
-                series.EndDateTimeUTC = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()) + 'Z'
-
+                    print 'The series %s at %s has data beginning at %s and ending at %s' % \
+                          (var_code, site_code, series.BeginDateTime, series.EndDateTime)
+                          
                 series.Site = site
                 series.Variable = var
                 if method_list:
@@ -584,7 +548,8 @@ class czoDao(BaseDao):
                                 
                 if DEBUG_PRINT:
                     number_data_series = len(series_list)
-                    print 'Number Data Series Found for this site AND variable: %d' % (number_data_series)
+                    print 'Number Data Series Found for %s at %s: %d' % \
+                          (var_code, site_code, number_data_series)
                     
         return series_list
                 
@@ -603,16 +568,20 @@ class czoDao(BaseDao):
         begin_datetime = []
 
         # open database, read the earlist time for this table/data column
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()  
         cur.execute("""
         SELECT MIN(Date)
         FROM %s
         WHERE %s != '';
         """ % (table_name,column_name))
-        begin_datetime = cur.fetchone()
+        row = cur.fetchone()
+        begin_datetime = row[0]
         cur.close()     # close the database cursor
-        conn.close()    # close the database connection
+        conn.close()    # close the database connection 
+            
+        if DEBUG_PRINT:
+            print "Series start date/time: %s" % (begin_datetime )      
         
         if not begin_datetime:
             return []
@@ -634,16 +603,20 @@ class czoDao(BaseDao):
         end_datetime = []
 
          # open database, read the latest time for this table/data column
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()  
         cur.execute("""
         SELECT MAX(Date)
         FROM %s
         WHERE %s != '';
         """ % (table_name,column_name))
-        end_datetime = cur.fetchone()
+        row = cur.fetchone()
+        end_datetime = row[0]
         cur.close()     # close the database cursor
         conn.close()    # close the database connection
+            
+        if DEBUG_PRINT:
+            print "Series start date/time: %s" % (end_datetime)
         
         if not end_datetime:
             return []
@@ -688,7 +661,7 @@ class czoDao(BaseDao):
         # If we know time zone, convert to local time.  Otherwise, assume local time.
         # Remove tzinfo in the end since datetimes from data file do not have
         # tzinfo either.  This enables date comparisons.
-        local_time_zone = tz(None, -18000) # Five hours behind UTC, in seconds
+        local_time_zone = tzoffset(None, -18000) # Five hours behind UTC, in seconds
         if b.tzinfo:
             b = b.astimezone(local_time_zone)
             b = b.replace(tzinfo=None)
@@ -719,7 +692,7 @@ class czoDao(BaseDao):
             print '*get_datavalues: ' + site_code + ' - ' + var_code
 
         # check with the database whether this site actually is tracking this variable.
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor() 
           
         cur.execute("""
@@ -747,18 +720,8 @@ class czoDao(BaseDao):
         column_name = row[1]              
         
         # Find the site and variable information using those functions
-        if DEBUG_PRINT:
-            print 'Subquery of get_datavalues:'
-            print '\\'
         siteResult = self.get_site_by_code(site_code)
-        if DEBUG_PRINT:
-            print '//'
-        if DEBUG_PRINT:
-            print 'Subquery of get_datavalues:'
-            print '\\'
         varResult = self.get_variable_by_code(var_code)
-        if DEBUG_PRINT:
-            print '//'
         valueResultArr = []
 
         # if failed to find site or variable
@@ -770,12 +733,7 @@ class czoDao(BaseDao):
             print '- ' + varResult.VariableName
 
         # Parse input dates
-        if DEBUG_PRINT:
-            print 'Subquery of get_datavalues:'
-            print '\\'
         parse_result = self.parse_date_strings(begin_date_time, end_date_time)
-        if DEBUG_PRINT:
-            print '//'
         b = parse_result[0] # begin datetime
         e = parse_result[1] # end datetime
 
@@ -789,7 +747,7 @@ class czoDao(BaseDao):
                   """ % (column_name,table_name,column_name,b,e)        
    
        # open database, read the values for this table/data column
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()  
         cur.execute("""
         SELECT Date, %s
@@ -804,10 +762,10 @@ class czoDao(BaseDao):
             datavalue = czo_model.DataValue()
             datavalue.DataValue = row[1]
             LocalDateTime_noUTC = row[0]
-            local_time_zone = tz(None, -18000) # Five hours behind UTC, in seconds
+            local_time_zone = tzoffset(None, -18000) # Five hours behind UTC, in seconds
             datavalue.LocalDateTime = LocalDateTime_noUTC.replace(tzinfo=local_time_zone)
             datavalue.MethodID = varResult.MethodID # MethodID was not originally part of datavalue object
-            valueResultArr.append(datavalue)           
+            valueResultArr.append(datavalue)            
                     
         if DEBUG_PRINT:        
             t2 = time.time()
@@ -823,7 +781,7 @@ class czoDao(BaseDao):
             A list of method codes (integers)
         """
         if DEBUG_PRINT:
-            print 'get_methods_by_ids: '
+            print '*get_methods_by_ids: ' + repr(method_id_arr)
 
         if not method_id_arr:
             return []
@@ -831,7 +789,7 @@ class czoDao(BaseDao):
         methods = [] 
 
         # Open a connection to the database
-        conn=pymysql.connect(host="mysql.swrcsensors.dreamhosters.com",port=3306,db="XXXXX",user="XXXXX",passwd="XXXXX")
+        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
         cur = conn.cursor()    
 
         for method_id in method_id_arr:
@@ -865,7 +823,7 @@ class czoDao(BaseDao):
         At this time, the source is HARDCODED to be Steve Hicks.
         """
         if DEBUG_PRINT:
-            print '*get_sources_by_ids: '
+            print '*get_sources_by_ids: ' + repr(source_id_arr)
             
         sources = []
         source = czo_model.Source()
