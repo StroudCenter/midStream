@@ -1,0 +1,12 @@
+*.idea/*
+*/.idea/*
+*.bak
+*/AppendLogs/*
+*/data*/*
+data/*
+*/dbinfo.py
+*/dbinfo.pyc
+*.pyc
+DreamHost midStream/*.csv
+DreamHost midStream/*.sql
+SWRCSensors/SWRCSensors/keys.py

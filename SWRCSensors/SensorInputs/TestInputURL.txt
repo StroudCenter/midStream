@@ -1,0 +1,1 @@
+http://127.0.0.1:8080/SensorInputs/input/?LoggerID=SL099&Loggertime=234242423&Val1=555.5&Val2=34.1&Val3=445&Val4=99&Val5=100&Val6=22.2&Val7=4.4
