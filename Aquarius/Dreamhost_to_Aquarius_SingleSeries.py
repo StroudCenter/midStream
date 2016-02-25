@@ -42,22 +42,16 @@ client = suds.client.Client(aq_url)
 
 
 # AqSeries = ((AQTimeSeriesID, TableName, TableColumnName),)
-# AqSeries = ((3257206, 'SL034', 'CTDdepth'),)
-# AqSeries = ((3257207, 'SL034', 'CTDtemp'),)
-# AqSeries = ((3257205, 'SL034', 'CTDcond'),)
-# AqSeries = ((3257212, 'SL034', 'TurbLow'),)
-# AqSeries = ((3257210, 'SL034', 'TurbHigh'),)
-# AqSeries = ((3257208, 'SL034', 'Battery'),)
+# AqSeries = ((9594455, 'SL042', 'CTDdepth'),)
+# AqSeries = ((9594456, 'SL042', 'CTDtemp'),)
+# AqSeries = ((9594454, 'SL042', 'CTDcond'),)
+# AqSeries = ((9594461, 'SL042', 'TurbLow'),)
+# AqSeries = ((9594459, 'SL042', 'TurbHigh'),)
+# AqSeries = ((9594932, 'SL038', 'Battery'),)
+# AqSeries = ((9601392, 'SL038', 'BoardTemp'),)
+AqSeries = ((9594931, 'SL038', 'RainDepth_mm'),)
 
-# AqSeries = ((6256245, 'SL034', 'CTDdepth'),)
-# AqSeries = ((6256246, 'SL034', 'CTDtemp'),)
-# AqSeries = ((6256247, 'SL034', 'CTDcond'),)
-# AqSeries = ((6256248, 'SL034', 'TurbLow'),)
-# AqSeries = ((6256249, 'SL034', 'TurbHigh'),)
-AqSeries = ((6256250, 'SL034', 'Battery'),)
-# AqSeries = ((161540, 'davis', 'temperature'),)
 
-# AqSeries = ((3786998, 'SL054', 'CTDcond'),)
 
 if Log_to_file:
     # Find the date/time the script was started:
@@ -119,15 +113,26 @@ def get_data_from_table(Table,Column):
     #Create a comma separated string of the data in the database
     csvdata = ''
     csvdata2 = ''
+
+    fff = "" # fff represents a numeric flag value (optional).
+    ggg = "" # ggg represents a numeric grade value (optional).
+    iii = "" # iii represents a numeric interpolation code (optional).
+    aaa = "" # aaa represents a numeric approval code (optional).
+    note = "" # “note” represents a text note which can be attached to the point (optional).
+
     for timestamp, value in values_table:
         if Table in ("davis" "CRDavis"):
-            csvdata2 += csvdata.join("\n".join(["%s"",""%s" % (timestamp.isoformat(' '), value)]) + "\n")
+            csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
+                                                (timestamp.isoformat(' '), value, fff, ggg, iii, aaa, note)])
+                                     + "\n")
         else:
             # Need to convert arduino logger time into unix time (add 946684800)
             # and then to UTC-5 (add 18000)
             timestamp_dt = datetime.datetime.fromtimestamp(timestamp+946684800+18000,tz=pytz.timezone('EST'))
             timestamp_dt2 = timestamp_dt.replace(tzinfo=None)
-            csvdata2 += csvdata.join("\n".join(["%s"",""%s" % (timestamp_dt2.isoformat(' '), value)]) + "\n")
+            csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
+                                                (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)])
+                                     + "\n")
         
     #Convert the datastring into a base64 object
     csvbytes = base64.b64encode(csvdata2)

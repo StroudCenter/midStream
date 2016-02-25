@@ -141,15 +141,26 @@ def get_data_from_table(Table,Column):
     #Create a comma separated string of the data in the database
     csvdata = ''
     csvdata2 = ''
+
+    fff = "" # fff represents a numeric flag value (optional).
+    ggg = "" # ggg represents a numeric grade value (optional).
+    iii = "" # iii represents a numeric interpolation code (optional).
+    aaa = "" # aaa represents a numeric approval code (optional).
+    note = "" # “note” represents a text note which can be attached to the point (optional).
+
     for timestamp, value in values_table:
         if Table in ("davis" "CRDavis"):
-            csvdata2 += csvdata.join("\n".join(["%s"",""%s" % (timestamp.isoformat(' '), value)]) + "\n")
+            csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
+                                                (timestamp.isoformat(' '), value, fff, ggg, iii, aaa, note)])
+                                     + "\n")
         else:
             # Need to convert arduino logger time into unix time (add 946684800)
             # and then to UTC-5 (add 18000)
             timestamp_dt = datetime.datetime.fromtimestamp(timestamp+946684800+18000,tz=pytz.timezone('EST'))
             timestamp_dt2 = timestamp_dt.replace(tzinfo=None)
-            csvdata2 += csvdata.join("\n".join(["%s"",""%s" % (timestamp_dt2.isoformat(' '), value)]) + "\n")
+            csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
+                                                (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)])
+                                     + "\n")
         
     #Convert the datastring into a base64 object
     csvbytes = base64.b64encode(csvdata2)
