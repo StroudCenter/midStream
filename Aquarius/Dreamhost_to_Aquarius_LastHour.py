@@ -68,7 +68,7 @@ print "Authentication Token: %s" % (AuthToken)
 #Look for Dataseries that have an associated Aquarius Time Series ID
 conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
 cur = conn.cursor()
-        
+
 cur.execute("""
     SELECT DISTINCT
         AQTimeSeriesID,
@@ -78,8 +78,11 @@ cur.execute("""
         Series_for_midStream
     WHERE
         AQTimeSeriesID != 0
-    ;
-""")
+        AND (DateTimeSeriesEnd = '0000-00-00 00:00:00'
+             OR DateTimeSeriesEnd > '%s')
+    ;"""
+    % str(start_datetime_loc.strftime("%Y-%m-%d %H:%M:%S"))
+)
 
 AqSeries = cur.fetchall()
 
