@@ -7,6 +7,6 @@ data/*
 */dbinfo.py
 */dbinfo.pyc
 *.pyc
-DreamHost midStream/*.csv
-DreamHost midStream/*.sql
+DreamHost-midStream/*.csv
+DreamHost-midStream/*.sql
 SWRCSensors/SWRCSensors/keys.py
