@@ -66,15 +66,19 @@ cur.execute("""
     SELECT DISTINCT
         AQTimeSeriesID,
         TableName,
-        TableColumnName
+        TableColumnName,
+        DateTimeSeriesEnd
     FROM
         Series_for_midStream
     WHERE
         AQTimeSeriesID != 0
         AND (DateTimeSeriesEnd = '0000-00-00 00:00:00'
-             OR DateTimeSeriesEnd > '%s 00:00:00')
+             OR DateTimeSeriesEnd > '%s')
+    ORDER BY
+        TableName,
+        AQTimeSeriesID
     ;"""
-    % str(start_datetime.strftime("%Y-%m-%d"))
+    % str(start_datetime.strftime("%Y-%m-%d %H:%M:%S"))
 )
 
 AqSeries = cur.fetchall()
@@ -91,40 +95,70 @@ if Log_to_file:
 #connections.DEBUG = True
 
 #Call data from the MySQL database
-def get_data_from_table(Table,Column):
+def get_data_from_table(Table,Column,SeriesEnd=None):
     """Returns a base64 data object with the data from a given table and column
 
         Required Arguments:
             table name, column name
+        Optional Arguments:
+            end of time series (formatted: 'yyyy-mm-dd HH:MM:SS')
+            if omitted, will default to NULL
     """
     #Creating the query text here because the character masking works oddly
     #in the cur.execute function.
-    if Table in ("davis" "CRDavis"):
-        query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
-                     + Column + " IS NOT NULL " + ";"
+    if SeriesEnd != None:
+        if Table == "CRDavis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                         + " AND " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        elif Table == "davis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                         + " AND " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        else:
+            query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
+                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                         + " AND " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
     else:
-        query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
-                     + Column + " IS NOT NULL " + ";"
+        if Table == "CRDavis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        elif Table == "davis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        else:
+            query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+
+    print "Data selected using the query:"
+    print query_text
 
     conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
     cur = conn.cursor()
 
     cur.execute(query_text)
-        
+
     values_table = cur.fetchall()
-    
+
     cur.close()     # close the database cursor
     conn.close()    # close the database connection
-    
-    print "Data selected using the query:"
-    print query_text    
+
     print "which returns %s values" % (len(values_table))
-    
+
     # if Log_to_file:
     #     text_file.write("Data selected using the query: \n")
     #     text_file.write("%s \n" % (query_text))
     #     text_file.write("which returns %s values \n" % (len(values_table)))
-    
+
     #Create a comma separated string of the data in the database
     csvdata = ''
     csvdata2 = ''
@@ -148,18 +182,18 @@ def get_data_from_table(Table,Column):
             csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
                                                 (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)])
                                      + "\n")
-        
+
     #Convert the datastring into a base64 object
     csvbytes = base64.b64encode(csvdata2)
-    
+
     return csvbytes
 
 
 #Get data for all series that are available
 loopnum = 1
-for AQTimeSeriesID, TableName, TableColumnName in AqSeries:
+for AQTimeSeriesID, TableName, TableColumnName, SeriesEnd in AqSeries:
     print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
-    appendbytes = get_data_from_table(TableName,TableColumnName)
+    appendbytes = get_data_from_table(TableName,TableColumnName,SeriesEnd)
     #Actually append to the Aquarius dataset
     if len(appendbytes) > 0 :
         try:

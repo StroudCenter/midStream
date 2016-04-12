@@ -41,15 +41,8 @@ from dbinfo import aq_url, aq_username, aq_password, dbhost, dbname, dbuser, dbp
 client = suds.client.Client(aq_url)
 
 
-# AqSeries = ((AQTimeSeriesID, TableName, TableColumnName),)
-# AqSeries = ((9594455, 'SL042', 'CTDdepth'),)
-# AqSeries = ((9594456, 'SL042', 'CTDtemp'),)
-# AqSeries = ((9594454, 'SL042', 'CTDcond'),)
-# AqSeries = ((9594461, 'SL042', 'TurbLow'),)
-# AqSeries = ((9594459, 'SL042', 'TurbHigh'),)
-# AqSeries = ((9594932, 'SL038', 'Battery'),)
-# AqSeries = ((9601392, 'SL038', 'BoardTemp'),)
-AqSeries = ((9594931, 'SL038', 'RainDepth_mm'),)
+# AqSeries = ((AQTimeSeriesID, TableName, TableColumnName, SeriesEnd=None),)
+AqSeries = ((17691364, 'SL043', 'CTDdepth', None),)
 
 
 
@@ -63,7 +56,7 @@ if Log_to_file:
     text_file = open(logfile, "a+")
     text_file.write("Script: %s \n" % filename)
     text_file.write("Script started at %s \n \n" % start_datetime)
-    text_file.write("Manually Attempting Appends from table %s column %s to Aquarius series %s" %
+    text_file.write("Manually Attempting Appends from table %s column %s to Aquarius series %s  \n" %
                     (AqSeries[0][1], AqSeries[0][2], AqSeries[0][0]))
     text_file.write("Series, Table, Column, TimeSeriesIdentifier, NumPointsAppended, AppendToken  \n")
 
@@ -76,40 +69,70 @@ print "Authentication Token: %s" % (AuthToken)
 
 #Call data from the MySQL database
 conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
-def get_data_from_table(Table,Column):
+def get_data_from_table(Table,Column,SeriesEnd=None):
     """Returns a base64 data object with the data from a given table and column
 
         Required Arguments:
             table name, column name
+        Optional Arguments:
+            end of time series (formatted: 'yyyy-mm-dd HH:MM:SS')
+            if omitted, will default to NULL
     """
     #Creating the query text here because the character masking works oddly
     #in the cur.execute function.
-    if Table in ("davis" "CRDavis"):
-        query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
-                     + Column + " IS NOT NULL " + ";"
+    if SeriesEnd != None:
+        if Table == "CRDavis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                         + " AND " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        elif Table == "davis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                         + " AND " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        else:
+            query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
+                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                         + " AND " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
     else:
-        query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
-                     + Column + " IS NOT NULL " + ";"
+        if Table == "CRDavis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        elif Table == "davis" :
+            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+        else:
+            query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
+                         + Column + " IS NOT NULL " \
+                         + ";"
+
+    print "Data selected using the query:"
+    print query_text
 
     conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
     cur = conn.cursor()
 
     cur.execute(query_text)
-        
+
     values_table = cur.fetchall()
-    
+
     cur.close()     # close the database cursor
     conn.close()    # close the database connection
-    
-    print "Data selected using the query:"
-    print query_text    
+
     print "which returns %s values" % (len(values_table))
-    
+
     # if Log_to_file:
     #     text_file.write("Data selected using the query: \n")
     #     text_file.write("%s \n" % (query_text))
     #     text_file.write("which returns %s values \n" % (len(values_table)))
-    
+
     #Create a comma separated string of the data in the database
     csvdata = ''
     csvdata2 = ''
@@ -133,18 +156,18 @@ def get_data_from_table(Table,Column):
             csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
                                                 (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)])
                                      + "\n")
-        
+
     #Convert the datastring into a base64 object
     csvbytes = base64.b64encode(csvdata2)
-    
+
     return csvbytes
 
 
 #Get data for all series that are available
 loopnum = 1
-for AQTimeSeriesID, TableName, TableColumnName in AqSeries:
+for AQTimeSeriesID, TableName, TableColumnName, SeriesEnd in AqSeries:
     print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
-    appendbytes = get_data_from_table(TableName,TableColumnName)
+    appendbytes = get_data_from_table(TableName,TableColumnName,SeriesEnd)
     #Actually append to the Aquarius dataset
     if len(appendbytes) > 0 :
         try:
