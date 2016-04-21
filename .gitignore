@@ -12,3 +12,4 @@ DreamHost-midStream/*.sql
 SWRCSensors/SWRCSensors/keys.py
 *.ffs_db
 sync.ffs_db
+dbinfo.py

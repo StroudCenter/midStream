@@ -26,7 +26,7 @@ from dbinfo import dbhost, dbname, dbuser, dbpswd
 
 # if DEBUG_PRINT is True, lots of information will be printed to the console
 # which slows retrieval of data series significantly
-DEBUG_PRINT = False
+DEBUG_PRINT = True
 
 class czoDao(BaseDao):
     #def __init__(self, values_file_path):
@@ -114,7 +114,7 @@ class czoDao(BaseDao):
         for row in table:
             if DEBUG_PRINT:
                 print 'Subquery of get_all_sites:'
-                print '('
+                print '(create_site_from_row(%s)' % repr(row)
             site = self.create_site_from_row(row)
             if DEBUG_PRINT:
                 print ')'
@@ -160,8 +160,8 @@ class czoDao(BaseDao):
         conn.close()    # close the database connection
 
         if DEBUG_PRINT:
-            print 'Subquery of get_site_by_code:'
-            print '('
+            print 'Subquery of get_site_by_code: %s' % site_code
+            print '(create_site_from_row(%s)' % repr(row)
         site = self.create_site_from_row(row)
         if DEBUG_PRINT:
             print ')'
@@ -204,8 +204,8 @@ class czoDao(BaseDao):
             row = cur.fetchone()
             if row:
                 if DEBUG_PRINT:
-                    print 'Subquery of get_sites_by_codes:'
-                    print '('
+                    print 'Subquery of get_sites_by_codes: %s' % repr(row)
+                    print '(create_site_from_row(%s)' % repr(row)
                 site = self.create_site_from_row(row)
                 if DEBUG_PRINT:
                     print ')'
@@ -435,8 +435,8 @@ class czoDao(BaseDao):
         vars = []
         for var_code in var_codes_arr:  
             if DEBUG_PRINT:
-                print 'Subquery of get_variables_by_codes:'
-                print '['
+                print 'Subquery of get_variables_by_codes: %s' % var_code
+                print '[get_variable_by_code(%s)' % var_code
             var1 = self.get_variable_by_code(var_code)
             if DEBUG_PRINT:
                 print ']'
@@ -459,13 +459,14 @@ class czoDao(BaseDao):
         series_list = []
         
         if DEBUG_PRINT:
-            print 'Subquery of get_series_by_sitecode:'
-            print '{'
+            print 'Subqueries of get_series_by_sitecode: %s' % site_code
+            print '{{{------------------------------------------{{{'
+            print 'get_site_by_code(%s)' % site_code
         site = self.get_site_by_code(site_code)
-        if DEBUG_PRINT:
-            print '}'
 
         if not site:
+            if DEBUG_PRINT:
+                print '}}}------------------------------------------}}}'
             return []
 
         # open database, find all of the variable codes available for this site
@@ -487,6 +488,8 @@ class czoDao(BaseDao):
         conn.close()    # close the database connection
         
         if not table:
+            if DEBUG_PRINT:
+                print '-------------------------------------}}}'
             return []
         
         # given all of the variable codes, create series for each variable
@@ -495,17 +498,15 @@ class czoDao(BaseDao):
             var_code = row[0]
             
             if DEBUG_PRINT:
-                print 'Subquery of get_series_by_sitecode:'
-                print '{'
+                print 'get_series_by_sitecode_and_varcode(%s, %s)' % (site_code, var_code)
             series = self.get_series_by_sitecode_and_varcode(site_code, var_code)
-            if DEBUG_PRINT:
-                print '}'
 
             series_list.extend(series)
         
         if DEBUG_PRINT:
+            print '-------------------------------------}}}'
             number_data_series = len(series_list)
-            print 'Number Data Series Found at %s: %d' % (site_code,number_data_series)
+            print 'Number of Data Series Found at %s: %d' % (site_code,number_data_series)
 
         return series_list
 
@@ -524,27 +525,19 @@ class czoDao(BaseDao):
         
         series_list = []
         if DEBUG_PRINT:
-            print 'Subquery of get_series_by_sitecode_and_varcode:'
-            print '<'
+            print 'Subqueries of get_series_by_sitecode_and_varcode:'
+            print '<<<==============================================<<<'
+            print 'get_site_by_code(%s)' % site_code
         site = self.get_site_by_code(site_code)
-        if DEBUG_PRINT:
-            print '>'
         if site:
             if DEBUG_PRINT:
-                print 'Subquery of get_series_by_sitecode_and_varcode:'
-                print '<'
+                print 'get_variable_by_code(%s)' % var_code
             var = self.get_variable_by_code(var_code)
-            if DEBUG_PRINT:
-                print '>'
             if var:
-                
                 series = czo_model.Series()
                 if DEBUG_PRINT:
-                    print 'Subquery of get_series_by_sitecode_and_varcode:'
-                    print '<'
+                    print 'get_methods_by_ids([%s])' % var.MethodID
                 method_list = self.get_methods_by_ids([var.MethodID])
-                if DEBUG_PRINT:
-                    print '>'
 
                 # open database, the right table name, and column names for the data values
                 conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
@@ -580,17 +573,11 @@ class czoDao(BaseDao):
                 series.EndDateTimeUTC = series.EndDateTime.astimezone(pytz.utc)
                 
                 if DEBUG_PRINT:
-                    print 'Subquery of get_series_by_sitecode_and_varcode:'
-                    print '<'
+                    print 'get_begin_datetime(%s,%s)' % (table_name,column_name)
                 series.BeginDateTime = self.get_begin_datetime(table_name,column_name)
                 if DEBUG_PRINT:
-                    print '>'
-                if DEBUG_PRINT:
-                    print 'Subquery of get_series_by_sitecode_and_varcode:'
-                    print '<'
+                    print 'get_end_datetime(%s,%s)' % (table_name,column_name)
                 series.EndDateTime = self.get_end_datetime(table_name,column_name)
-                if DEBUG_PRINT:
-                    print '>'
                 series.BeginDateTimeUTC = '2013-01-01T05:00:00Z'
                 series.EndDateTimeUTC = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()) + 'Z'
 
@@ -605,6 +592,7 @@ class czoDao(BaseDao):
                 series_list.append(series)
                                 
                 if DEBUG_PRINT:
+                    print '>>>==============================================>>>'
                     number_data_series = len(series_list)
                     print 'Number Data Series Found for %s at %s: %d' % \
                           (var_code, site_code, number_data_series)
@@ -779,17 +767,13 @@ class czoDao(BaseDao):
         
         # Find the site and variable information using those functions
         if DEBUG_PRINT:
-            print 'Subquery of get_datavalues:'
-            print '\\'
+            print 'Subqueries of get_datavalues:'
+            print '\\\\\\\\-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-\\\\\\\\'
+            print 'get_site_by_code(%s)' % site_code
         siteResult = self.get_site_by_code(site_code)
         if DEBUG_PRINT:
-            print '//'
-        if DEBUG_PRINT:
-            print 'Subquery of get_datavalues:'
-            print '\\'
+            print 'get_variable_by_code(%s)' % var_code
         varResult = self.get_variable_by_code(var_code)
-        if DEBUG_PRINT:
-            print '//'
         valueResultArr = []
 
         # if failed to find site or variable
@@ -802,15 +786,13 @@ class czoDao(BaseDao):
 
         # Parse input dates
         if DEBUG_PRINT:
-            print 'Subquery of get_datavalues:'
-            print '\\'
+            print 'parse_date_strings(%s, %s)' % (begin_date_time, end_date_time)
         parse_result = self.parse_date_strings(begin_date_time, end_date_time)
-        if DEBUG_PRINT:
-            print '//'
         b = parse_result[0] # begin datetime
         e = parse_result[1] # end datetime
 
         if DEBUG_PRINT:  #To see how long this takes
+            print '////-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-////'
             t1 = time.time()
             print "Executing this SQL Query to find data values:"
             print """
