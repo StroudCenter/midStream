@@ -1,31 +1,16 @@
 # -*- coding: utf-8 -*-
 
-__author__ = 'Sara Geleskie Damiano'
-
 """
 Created on Wed Nov 05 13:58:15 2014
 
 @author: Sara Geleskie Damiano
 
-This script moves all data tagged with an Aquarius dataset primary key from a dreamhost database to Stround's
-Aquarius server.
+This script moves all data from series tagged with an Aquarius dataset primary key
+from a DreamHost database to Stroud's Aquarius server.
+This does exclude streaming datasets marked with an end time of greater than 1 week ago.
 """
 
-#Set up logging to an external file if desired
-Log_to_file = True
-
 import suds
-
-#==============================================================================
-# #This would log any issues with the SUDS connection.
-# import logging
-# logging.basicConfig(level=logging.INFO)
-# logging.getLogger('suds.client').setLevel(logging.DEBUG)
-# logging.getLogger('suds.transport').setLevel(logging.DEBUG)
-# logging.getLogger('suds.xsd.schema').setLevel(logging.DEBUG)
-# logging.getLogger('suds.wsdl').setLevel(logging.DEBUG)
-#==============================================================================
-
 import pymysql
 import datetime
 import pytz
@@ -33,52 +18,68 @@ import base64
 import os
 import sys
 
-#Bring in all of the database connection inforamation.
+# Bring in all of the database connection inforamation.
 from dbinfo import aq_url, aq_username, aq_password, dbhost, dbname, dbuser, dbpswd, logdirectory
 
+__author__ = 'Sara Geleskie Damiano'
 
-#Call up the Aquarius Aquisition SOAP API
+# Set up logging to an external file if desired
+Log_to_file = True
+
+
+# Call up the Aquarius Aquisition SOAP API
 client = suds.client.Client(aq_url)
 
+# Find the date/time the script was started:
+start_datetime_utc = datetime.datetime.now(pytz.utc)
+
+# Deal with timezones...
+eastern_standard_time = pytz.timezone('Etc/GMT+5')
+eastern_local_time = pytz.timezone('US/Eastern')
+costa_rica_time = pytz.timezone('Etc/GMT+6')
+start_datetime_est = start_datetime_utc.astimezone(eastern_standard_time)
+start_datetime_loc = start_datetime_utc.astimezone(eastern_local_time)
+
+# Set the datetime for the query to go from
+query_datetime = start_datetime_loc - datetime.timedelta(weeks=1)
 
 if Log_to_file:
-    # Find the date/time the script was started:
-    start_datetime = datetime.datetime.now()
     # Get the path and directory of this script:
     filename = os.path.realpath(__file__)
     #Open up a text file to log to
-    logfile = logdirectory + "\AppendLog_" + start_datetime.strftime("%Y%m%d") + ".txt"
+    logfile = logdirectory + "\AppendLog_" + start_datetime_loc.strftime("%Y%m%d") + ".txt"
     text_file = open(logfile, "a+")
     text_file.write("Script: %s \n" % filename)
-    text_file.write("Script started at %s \n \n" % start_datetime)
+    text_file.write("Script started at %s \n \n" % start_datetime_loc)
 
 
-#Get an authentication token to open the path into the API
-AuthToken = client.service.GetAuthToken(aq_username,aq_password)
-print "Authentication Token: %s" % (AuthToken)
+# Get an authentication token to open the path into the API
+AuthToken = client.service.GetAuthToken(aq_username, aq_password)
+print "Authentication Token: %s" % AuthToken
 
-
-#Look for Dataseries that have an associated Aquarius Time Series ID
-conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+# Set up connection to the DreamHost MySQL database
+conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
 cur = conn.cursor()
 
+# Look for Dataseries that have an associated Aquarius Time Series ID
 cur.execute("""
     SELECT DISTINCT
         AQTimeSeriesID,
         TableName,
         TableColumnName,
+        DateTimeSeriesStart,
         DateTimeSeriesEnd
     FROM
         Series_for_midStream
     WHERE
         AQTimeSeriesID != 0
-        AND (DateTimeSeriesEnd = '0000-00-00 00:00:00'
+        AND (DateTimeSeriesEnd is NULL
              OR DateTimeSeriesEnd > '%s')
     ORDER BY
         TableName,
         AQTimeSeriesID
     ;"""
-    % str(start_datetime.strftime("%Y-%m-%d %H:%M:%S"))
+    % str(query_datetime.strftime("%Y-%m-%d %H:%M:%S"))
 )
 
 AqSeries = cur.fetchall()
@@ -91,59 +92,44 @@ if Log_to_file:
     text_file.write("%s series found with corresponding time series in Aquarius \n \n" % (len(AqSeries)))
     text_file.write("Series, Table, Column, TimeSeriesIdentifier, NumPointsAppended, AppendToken  \n")
 
-#from pymysql import connections
-#connections.DEBUG = True
 
-#Call data from the MySQL database
-def get_data_from_table(Table,Column,SeriesEnd=None):
-    """Returns a base64 data object with the data from a given table and column
-
-        Required Arguments:
-            table name, column name
-        Optional Arguments:
-            end of time series (formatted: 'yyyy-mm-dd HH:MM:SS')
-            if omitted, will default to NULL
+def get_data_from_table(table, column, series_start, series_end):
     """
-    #Creating the query text here because the character masking works oddly
-    #in the cur.execute function.
-    if SeriesEnd != None:
-        if Table == "CRDavis" :
-            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
-                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                         + " AND " \
-                         + Column + " IS NOT NULL " \
-                         + ";"
-        elif Table == "davis" :
-            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
-                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                         + " AND " \
-                         + Column + " IS NOT NULL " \
-                         + ";"
-        else:
-            query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
-                         + "Date > " + str(SeriesEnd.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                         + " AND " \
-                         + Column + " IS NOT NULL " \
-                         + ";"
+    Returns a base64 data object with the data from a given table and column
+    """
+    # Creating the query text here because the character masking works oddly
+    # in the cur.execute function.
+    if series_end is None:
+        series_end = datetime.datetime.max
+    if series_start is None:
+        series_start = datetime.datetime(1900, 1, 1, 0, 0, 0)
+    if table == "CRDavis":
+        query_text = "SELECT Date, " + column + " FROM " + table + " WHERE " \
+                     + "Date < " + str(series_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                     + " AND " \
+                     + "Date > " + str(series_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                     + " AND " \
+                     + column + " IS NOT NULL " \
+                     + ";"
+    elif table == "davis":
+        query_text = "SELECT Date, " + column + " FROM " + table + " WHERE " \
+                     + "Date < " + str(series_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                     + " AND " \
+                     + "Date > " + str(series_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                     + " AND " \
+                     + column + " IS NOT NULL " \
+                     + ";"
     else:
-        if Table == "CRDavis" :
-            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
-                         + Column + " IS NOT NULL " \
-                         + ";"
-        elif Table == "davis" :
-            query_text = "SELECT Date, " + Column + " FROM " + Table + " WHERE " \
-                         + Column + " IS NOT NULL " \
-                         + ";"
-        else:
-            query_text = "SELECT Loggertime, " + Column + " FROM " + Table + " WHERE " \
-                         + Column + " IS NOT NULL " \
-                         + ";"
+        query_text = "SELECT Loggertime, " + column + " FROM " + table + " WHERE " \
+                     + "Date < " + str(series_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                     + " AND " \
+                     + "Date > " + str(series_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
+                     + " AND " \
+                     + column + " IS NOT NULL " \
+                     + ";"
 
     print "Data selected using the query:"
     print query_text
-
-    conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
-    cur = conn.cursor()
 
     cur.execute(query_text)
 
@@ -159,70 +145,74 @@ def get_data_from_table(Table,Column,SeriesEnd=None):
     #     text_file.write("%s \n" % (query_text))
     #     text_file.write("which returns %s values \n" % (len(values_table)))
 
-    #Create a comma separated string of the data in the database
+    # Create a comma separated string of the data in the database
     csvdata = ''
     csvdata2 = ''
 
-    fff = "" # fff represents a numeric flag value (optional).
-    ggg = "" # ggg represents a numeric grade value (optional).
-    iii = "" # iii represents a numeric interpolation code (optional).
-    aaa = "" # aaa represents a numeric approval code (optional).
-    note = "" # “note” represents a text note which can be attached to the point (optional).
+    fff = ""  # fff represents a numeric flag value (optional).
+    ggg = ""  # ggg represents a numeric grade value (optional).
+    iii = ""  # iii represents a numeric interpolation code (optional).
+    aaa = ""  # aaa represents a numeric approval code (optional).
+    note = ""  # “note” represents a text note which can be attached to the point (optional).
 
     for timestamp, value in values_table:
-        if Table in ("davis" "CRDavis"):
+        if table in ("davis" "CRDavis"):
             csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
-                                                (timestamp.isoformat(' '), value, fff, ggg, iii, aaa, note)])
-                                     + "\n")
+                                                (timestamp.isoformat(' '), value, fff, ggg, iii, aaa, note)]) +
+                                     "\n")
         else:
             # Need to convert arduino logger time into unix time (add 946684800)
             # and then to UTC-5 (add 18000)
-            timestamp_dt = datetime.datetime.fromtimestamp(timestamp+946684800+18000,tz=pytz.timezone('EST'))
+            timestamp_dt = datetime.datetime.fromtimestamp(timestamp+946684800+18000, tz=pytz.timezone('EST'))
             timestamp_dt2 = timestamp_dt.replace(tzinfo=None)
             csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
-                                                (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)])
-                                     + "\n")
+                                                (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)]) +
+                                     "\n")
 
-    #Convert the datastring into a base64 object
+    # Convert the datastring into a base64 object
     csvbytes = base64.b64encode(csvdata2)
 
     return csvbytes
 
 
-#Get data for all series that are available
+# Get data for all series that are available
 loopnum = 1
-for AQTimeSeriesID, TableName, TableColumnName, SeriesEnd in AqSeries:
+for AQTimeSeriesID, table_name, table_column_name, series_start, series_end in AqSeries:
     print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
-    appendbytes = get_data_from_table(TableName,TableColumnName,SeriesEnd)
-    #Actually append to the Aquarius dataset
-    if len(appendbytes) > 0 :
+    appendbytes = get_data_from_table(table_name, table_column_name, series_start, series_end)
+    # Actually append to the Aquarius dataset
+    if len(appendbytes) > 0:
         try:
             AppendResult = client.service.AppendTimeSeriesFromBytes2(
-                long(AQTimeSeriesID),appendbytes,aq_username)
+                long(AQTimeSeriesID), appendbytes, aq_username)
         except:
             error_in_append = sys.exc_info()[0]
             print "Error: %s" % error_in_append
             if Log_to_file:
-                text_file.write("%s, %s, %s, ERROR!, 0, %s  \n" % (loopnum, TableName, TableColumnName, error_in_append))
+                text_file.write("%s, %s, %s, ERROR!, 0, %s  \n"
+                                % (loopnum, table_name, table_column_name, error_in_append))
         else:
             print AppendResult
             if Log_to_file:
-                #text_file.write("%s \n" % AppendResult)
-                text_file.write("%s, %s, %s, %s, %s, %s \n" % (loopnum, TableName, TableColumnName, AppendResult.TsIdentifier, AppendResult.NumPointsAppended, AppendResult.AppendToken))
+                # text_file.write("%s \n" % AppendResult)
+                text_file.write("%s, %s, %s, %s, %s, %s \n"
+                                % (loopnum, table_name, table_column_name, AppendResult.TsIdentifier,
+                                   AppendResult.NumPointsAppended, AppendResult.AppendToken))
     else:
         print "No data appended from this query."
         if Log_to_file:
-            #text_file.write("No data appended from this query. \n")
-            text_file.write("%s, %s, %s, NoAppend, 0, NoAppend  \n" % (loopnum, TableName, TableColumnName))
+            # text_file.write("No data appended from this query. \n")
+            text_file.write("%s, %s, %s, NoAppend, 0, NoAppend  \n" % (loopnum, table_name, table_column_name))
     loopnum += 1
         
-#Close out the text file
+# Close out the text file
 if Log_to_file:
     # Find the date/time the script was started:
-    end_datetime = datetime.datetime.now()
-    runtime = end_datetime - start_datetime
+    end_datetime_utc = datetime.datetime.now(pytz.utc)
+    end_datetime_loc = end_datetime_utc.astimezone(eastern_local_time)
+    runtime = end_datetime_utc - start_datetime_utc
     text_file.write("\n")
-    text_file.write("Script completed at %s \n" % end_datetime)
+    text_file.write("Script completed at %s \n" % end_datetime_loc)
     text_file.write("Total time for script: %s \n" % runtime)
     text_file.write("========================================================================================= \n")
     text_file.write("\n \n")

@@ -7,7 +7,7 @@ Created on Wed Nov 05 13:58:15 2014
 
 This script moves all data from series tagged with an Aquarius dataset primary key
 from a DreamHost database to Stroud's Aquarius server.
-This version only includes a single manually specified series.
+This version includes only data from one specified logger.
 """
 
 import suds
@@ -25,10 +25,8 @@ __author__ = 'Sara Geleskie Damiano'
 
 # Set up logging to an external file if desired
 Log_to_file = True
+Logger = "SL055"
 
-# Select the time series.
-# AqSeries = ((AQTimeSeriesID, TableName, TableColumnName, SeriesEnd=None),)
-AqSeries = ((17691364, 'SL043', 'CTDdepth', None),)
 
 # Call up the Aquarius Aquisition SOAP API
 client = suds.client.Client(aq_url)
@@ -51,9 +49,6 @@ if Log_to_file:
     text_file = open(logfile, "a+")
     text_file.write("Script: %s \n" % filename)
     text_file.write("Script started at %s \n \n" % start_datetime_loc)
-    text_file.write("Manually Attempting Appends from table %s column %s to Aquarius series %s  \n" %
-                    (AqSeries[0][1], AqSeries[0][2], AqSeries[0][0]))
-    text_file.write("Series, Table, Column, TimeSeriesIdentifier, NumPointsAppended, AppendToken  \n")
 
 
 # Get an authentication token to open the path into the API
@@ -63,6 +58,36 @@ print "Authentication Token: %s" % AuthToken
 # Set up connection to the DreamHost MySQL database
 conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
 cur = conn.cursor()
+
+# Look for Dataseries that have an associated Aquarius Time Series ID
+cur.execute("""
+    SELECT DISTINCT
+        AQTimeSeriesID,
+        TableName,
+        TableColumnName,
+        DateTimeSeriesStart,
+        DateTimeSeriesEnd
+    FROM
+        Series_for_midStream
+    WHERE
+        AQTimeSeriesID != 0
+        AND TableName ='%s'
+    ORDER BY
+        TableName,
+        AQTimeSeriesID
+    ;"""
+    % str(Logger)
+)
+
+AqSeries = cur.fetchall()
+
+cur.close()     # close the database cursor
+conn.close()    # close the database connection
+
+print "%s series found with corresponding time series in Aquarius" % (len(AqSeries))
+if Log_to_file:
+    text_file.write("%s series found with corresponding time series in Aquarius \n \n" % (len(AqSeries)))
+    text_file.write("Series, Table, Column, TimeSeriesIdentifier, NumPointsAppended, AppendToken  \n")
 
 
 def get_data_from_table(table, column, series_start, series_end):
