@@ -23,9 +23,9 @@ from dbinfo import aq_url, aq_username, aq_password, dbhost, dbname, dbuser, dbp
 
 __author__ = 'Sara Geleskie Damiano'
 
-# Set up logging to an external file if desired
-Log_to_file = True
-
+# Set up logging and debugging.
+Log_to_file = True  # This will save a log in an external text file.
+debug = True    # This will add lots of print statements.  Turn it off in production.
 
 # Call up the Aquarius Aquisition SOAP API
 client = suds.client.Client(aq_url)
@@ -43,6 +43,8 @@ start_datetime_loc = start_datetime_utc.astimezone(eastern_local_time)
 # Set the datetime for the query to go from
 query_datetime = start_datetime_loc - datetime.timedelta(hours=1)
 
+if debug:
+    print "Script started at %s" % start_datetime_loc
 if Log_to_file:
     # Get the path and directory of this script:
     filename = os.path.realpath(__file__)
@@ -55,7 +57,8 @@ if Log_to_file:
 
 # Get an authentication token to open the path into the API
 AuthToken = client.service.GetAuthToken(aq_username, aq_password)
-print "Authentication Token: %s" % AuthToken
+if debug:
+    print "Authentication Token: %s" % AuthToken
 
 # Set up connection to the DreamHost MySQL database
 conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
@@ -84,10 +87,8 @@ cur.execute("""
 
 AqSeries = cur.fetchall()
 
-cur.close()     # close the database cursor
-conn.close()    # close the database connection
-
-print "%s series found with corresponding time series in Aquarius" % (len(AqSeries))
+if debug:
+    print "%s series found with corresponding time series in Aquarius" % (len(AqSeries))
 if Log_to_file:
     text_file.write("%s series found with corresponding time series in Aquarius \n \n" % (len(AqSeries)))
     text_file.write("Series, Table, Column, TimeSeriesIdentifier, NumPointsAppended, AppendToken  \n")
@@ -97,15 +98,17 @@ def get_data_from_table(table, column, series_start, series_end):
     """
     Returns a base64 data object with the data from a given table and column
     """
-    # Creating the query text here because the character masking works oddly
-    # in the cur.execute function.
+    # Set up an min and max time for when those values are NULL in dreamhost
     if series_end is None:
         series_end = datetime.datetime.max
     if series_start is None:
         series_start = datetime.datetime(1900, 1, 1, 0, 0, 0)
+    # Get what time was an hour ago in the correct time zone.
     query_start_utc = start_datetime_utc - datetime.timedelta(hours=1)
     query_start_est = query_start_utc.astimezone(eastern_standard_time)
     query_start_cr = query_start_utc.astimezone(costa_rica_time)
+    # Creating the query text here because the character masking works oddly
+    # in the cur.execute function.
     if table == "CRDavis":
         query_text = "SELECT Date, " + column + " FROM " + table + " WHERE " \
                      + "Date < " + str(series_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
@@ -137,22 +140,16 @@ def get_data_from_table(table, column, series_start, series_end):
                      + column + " IS NOT NULL " \
                      + ";"
 
-    print "Data selected using the query:"
-    print query_text
+    if debug:
+        print "   Data selected using the query:"
+        print "   " + query_text
 
     cur.execute(query_text)
 
     values_table = cur.fetchall()
 
-    cur.close()     # close the database cursor
-    conn.close()    # close the database connection
-
-    print "which returns %s values" % (len(values_table))
-
-    # if Log_to_file:
-    #     text_file.write("Data selected using the query: \n")
-    #     text_file.write("%s \n" % (query_text))
-    #     text_file.write("which returns %s values \n" % (len(values_table)))
+    if debug:
+        print "   which returns %s values" % (len(values_table))
 
     # Create a comma separated string of the data in the database
     csvdata = ''
@@ -187,7 +184,9 @@ def get_data_from_table(table, column, series_start, series_end):
 # Get data for all series that are available
 loopnum = 1
 for AQTimeSeriesID, table_name, table_column_name, series_start, series_end in AqSeries:
-    print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
+    if debug:
+        print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
+        print "Data being appended to Time Series # " % AQTimeSeriesID
     appendbytes = get_data_from_table(table_name, table_column_name, series_start, series_end)
     # Actually append to the Aquarius dataset
     if len(appendbytes) > 0:
@@ -196,30 +195,41 @@ for AQTimeSeriesID, table_name, table_column_name, series_start, series_end in A
                 long(AQTimeSeriesID), appendbytes, aq_username)
         except:
             error_in_append = sys.exc_info()[0]
-            print "Error: %s" % error_in_append
+            if debug:
+                print "      Error: %s" % error_in_append
             if Log_to_file:
                 text_file.write("%s, %s, %s, ERROR!, 0, %s  \n"
                                 % (loopnum, table_name, table_column_name, error_in_append))
         else:
-            print AppendResult
+            if debug:
+                print AppendResult
             if Log_to_file:
-                # text_file.write("%s \n" % AppendResult)
                 text_file.write("%s, %s, %s, %s, %s, %s \n"
                                 % (loopnum, table_name, table_column_name, AppendResult.TsIdentifier,
                                    AppendResult.NumPointsAppended, AppendResult.AppendToken))
     else:
-        print "No data appended from this query."
+        if debug:
+            print "      No data appended from this query."
         if Log_to_file:
             # text_file.write("No data appended from this query. \n")
             text_file.write("%s, %s, %s, NoAppend, 0, NoAppend  \n" % (loopnum, table_name, table_column_name))
     loopnum += 1
-        
+
+# Close out the database connections
+cur.close()  # close the database cursor
+conn.close()  # close the database connection
+
+
+# Find the date/time the script finished:
+end_datetime_utc = datetime.datetime.now(pytz.utc)
+end_datetime_loc = end_datetime_utc.astimezone(eastern_local_time)
+runtime = end_datetime_utc - start_datetime_utc
+
 # Close out the text file
+if debug:
+    print "Script completed at %s \n" % end_datetime_loc
+    print "Total time for script: %s \n" % runtime
 if Log_to_file:
-    # Find the date/time the script was started:
-    end_datetime_utc = datetime.datetime.now(pytz.utc)
-    end_datetime_loc = end_datetime_utc.astimezone(eastern_local_time)
-    runtime = end_datetime_utc - start_datetime_utc
     text_file.write("\n")
     text_file.write("Script completed at %s \n" % end_datetime_loc)
     text_file.write("Total time for script: %s \n" % runtime)
