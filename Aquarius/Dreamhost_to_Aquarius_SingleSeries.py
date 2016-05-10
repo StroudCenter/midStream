@@ -56,7 +56,7 @@ if Log_to_file:
     text_file.write("Script started at %s \n \n" % start_datetime_loc)
     text_file.write("Manually Attempting Appends from table %s column %s to Aquarius series %s  \n" %
                     (AqSeries[0][1], AqSeries[0][2], AqSeries[0][0]))
-    text_file.write("Series, Table, Column, TimeSeriesIdentifier, NumPointsAppended, AppendToken  \n")
+    text_file.write("Series, Table, Column, NumericIdentifier, TextIdentifier, NumPointsAppended, AppendToken  \n")
 
 
 # Get an authentication token to open the path into the API
@@ -75,9 +75,9 @@ def get_data_from_table(table, column, series_start, series_end):
     """
     # Set up an min and max time for when those values are NULL in dreamhost
     if series_end is None:
-        series_end = datetime.datetime.max
+        series_end = start_datetime_utc + datetime.timedelta(days=1)  # Future times clearly not valid
     if series_start is None:
-        series_start = datetime.datetime(1900, 1, 1, 0, 0, 0)
+        series_start = datetime.datetime(2000, 1, 1, 0, 0, 0)
     # Creating the query text here because the character masking works oddly
     # in the cur.execute function.
     if table == "CRDavis":
@@ -108,6 +108,7 @@ def get_data_from_table(table, column, series_start, series_end):
     if debug:
         print "   Data selected using the query:"
         print "   " + query_text
+        t1 = datetime.datetime.now()
 
     cur.execute(query_text)
 
@@ -115,6 +116,8 @@ def get_data_from_table(table, column, series_start, series_end):
 
     if debug:
         print "   which returns %s values" % (len(values_table))
+        t2 = datetime.datetime.now()
+        print "   SQL execution took %s" % (t2 - t1)
 
     # Create a comma separated string of the data in the database
     csvdata = ''
@@ -151,26 +154,33 @@ loopnum = 1
 for AQTimeSeriesID, table_name, table_column_name, series_start, series_end in AqSeries:
     if debug:
         print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
-        print "Data being appended to Time Series # " % AQTimeSeriesID
+        print "Data being appended to Time Series # %s" % AQTimeSeriesID
     appendbytes = get_data_from_table(table_name, table_column_name, series_start, series_end)
     # Actually append to the Aquarius dataset
     if len(appendbytes) > 0:
         try:
+            if debug:
+                t3 = datetime.datetime.now()
             AppendResult = client.service.AppendTimeSeriesFromBytes2(
                 long(AQTimeSeriesID), appendbytes, aq_username)
+            if debug:
+                t4 = datetime.datetime.now()
         except:
             error_in_append = sys.exc_info()[0]
             if debug:
                 print "      Error: %s" % error_in_append
+                print "      API execution took %s" % (t4 - t3)
             if Log_to_file:
                 text_file.write("%s, %s, %s, ERROR!, 0, %s  \n"
                                 % (loopnum, table_name, table_column_name, error_in_append))
         else:
             if debug:
                 print AppendResult
+                print "      API execution took %s" % (t4 - t3)
             if Log_to_file:
-                text_file.write("%s, %s, %s, %s, %s, %s \n"
-                                % (loopnum, table_name, table_column_name, AppendResult.TsIdentifier,
+                text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
+                                % (loopnum, table_name, table_column_name,
+                                   AQTimeSeriesID, AppendResult.TsIdentifier,
                                    AppendResult.NumPointsAppended, AppendResult.AppendToken))
     else:
         if debug:
