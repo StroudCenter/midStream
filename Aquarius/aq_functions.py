@@ -227,8 +227,8 @@ def aq_timeseries_append(ts_numeric_id, appendbytes, cookie, debug=False):
                 if debug:
                     print "      Error: %s" % sys.exc_info()[0]
                     print '      %s' % e
-                    print '      Retrying in 10 seconds' % e
-                time.sleep(10)
+                    print '      Retrying in 30 seconds' % e
+                time.sleep(30)
             else:
                 if debug:
                     print append_result

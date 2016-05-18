@@ -18,9 +18,9 @@ import argparse
 import aq_functions as aq
 
 # Set up initial parameters - these are rewritten when run from the command prompt.
-past_hours_to_append = 2  # Sets number of hours in the past to append, use None for all time
-table = "SL031"  # Selects a single table to append from, often a logger number, use None for all loggers
-column = "CTDcond"  # Selects a single column to append from, often a variable code, use None for all columns
+past_hours_to_append = None  # Sets number of hours in the past to append, use None for all time
+table = "SL055"  # Selects a single table to append from, often a logger number, use None for all loggers
+column = None  # Selects a single column to append from, often a variable code, use None for all columns
 
 
 # Set up a parser for command line options
@@ -119,7 +119,7 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
                                                    query_start=query_start, query_end=None,
                                                    debug=debug)
 
-    AppendResult = aq.aq_timeseries_append(ts_numeric_id, appendbytes, debug=debug)
+    AppendResult = aq.aq_timeseries_append(ts_numeric_id, appendbytes, debug=debug, cookie=cookie)
 
     if Log_to_file:
         text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
