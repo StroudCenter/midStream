@@ -70,23 +70,24 @@ if Log_to_file:
 
 
 # Write out the contents of the event log to a text file.
-if Log_to_file:
-    conn = pymssql.connect(server=aqdb_host, user=aqdb_user, password=aqdb_password, database=aqdb_name, as_dict=True)
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT
-            *
-        FROM
-            aq_event_log_
-    """)
-
-    events = cur.fetchall()
-
-    cur.close()     # close the database cursor
-    conn.close()    # close the database connection
-    for row in events:
-        batext_file.write(row)
+# SRGD - Not doing this at this time, it slows down the script immensely.
+# if Log_to_file:
+#     conn = pymssql.connect(server=aqdb_host, user=aqdb_user, password=aqdb_password, database=aqdb_name, as_dict=True)
+#     cur = conn.cursor()
+#
+#     cur.execute("""
+#         SELECT
+#             *
+#         FROM
+#             aq_event_log_
+#     """)
+#
+#     events = cur.fetchall()
+#
+#     cur.close()     # close the database cursor
+#     conn.close()    # close the database connection
+#     for row in events:
+#         batext_file.write(row)
 
 
 #Look for the aop id of dataseries that are being appended by the API from dreamhost
