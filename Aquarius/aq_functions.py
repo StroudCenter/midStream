@@ -9,6 +9,7 @@ Created by Sara Geleskie Damiano on 5/16/2016 at 6:14 PM
 
 import suds
 import pymysql
+import pandas as pd
 import time
 import datetime
 import pytz
@@ -103,7 +104,15 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
 def get_data_from_dreamhost_table(table, column, series_start, series_end,
                                   query_start=None, query_end=None, debug=False):
     """
-    Returns a base64 data object with the data from a given table and column
+    Returns a pandas data frame with the timestamp and data value from a given table and column.
+    :param table: A string which is the same of the SQL table of interest
+    :param column: A string which is the name of the column of interest
+    :param series_start: The date/time when the series begins
+    :param series_end: The date/time when the series end
+    :param query_start: The beginning date/time of interest
+    :param query_end: The ending date/time of interest
+    :param debug: A boolean for whether extra print commands apply
+    :return: A pandas data frame with the timestamp and data value from a given table and column.
     """
 
     # Set up an min and max time for when those values are NULL in dreamhost
@@ -119,12 +128,13 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
 
     # Creating the query text here because the character masking works oddly
     # in the cur.execute function.
-    if table in ["davis" "CRDavis"]:
+    if table in ["davis", "CRDavis"]:
         dt_col = "Date"
     else:
         dt_col = "Loggertime"
 
-    query_text = "SELECT " + dt_col + ", " + column + " FROM " + table + " WHERE " \
+    query_text = "SELECT " + dt_col + ", " + column + " as data_value " \
+                 + "FROM " + table + " WHERE " \
                  + "Date < " + str(series_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
                  + " AND " \
                  + "Date > " + str(series_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
@@ -134,6 +144,7 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
                  + "Date > " + str(query_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
                  + " AND " \
                  + column + " IS NOT NULL " \
+                 + "ORDER BY " + dt_col \
                  + ";"
 
     if debug:
@@ -143,14 +154,10 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
 
     # Set up connection to the DreamHost MySQL database
     conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
-    cur = conn.cursor()
 
-    cur.execute(query_text)
-
-    values_table = cur.fetchall()
+    values_table = pd.read_sql(query_text,conn)
 
     # Close out the database connections
-    cur.close()  # close the database cursor
     conn.close()  # close the database connection
 
     if debug:
@@ -158,32 +165,50 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
         t2 = datetime.datetime.now()
         print "   SQL execution took %s" % (t2 - t1)
 
-    # Create a comma separated string of the data in the database
-    csvdata = ''
-    csvdata2 = ''
+    if table in ["davis", "CRDavis"]:
+        values_table['timestamp'] = values_table["Date"]
+        values_table.set_index(['timestamp'], inplace=True)
+        values_table.drop('Date', axis=1, inplace=True)
+    else:
+        # Need to convert arduino logger time into unix time (add 946684800)
+        values_table['unix_time'] = values_table["Loggertime"] + 946684800
+        values_table['timestamp'] = pd.to_datetime(values_table['unix_time'], unit='s')
+        values_table.set_index(['timestamp'], inplace=True)
+        values_table.drop('Loggertime', axis=1, inplace=True)
+        values_table.drop('unix_time', axis=1, inplace=True)
+    # print values_table.head(5)
+    # print values_table.dtypes
+    # print values_table.index
 
-    fff = ""  # fff represents a numeric flag value (optional).
-    ggg = ""  # ggg represents a numeric grade value (optional).
-    iii = ""  # iii represents a numeric interpolation code (optional).
-    aaa = ""  # aaa represents a numeric approval code (optional).
-    note = ""  # “note” represents a text note which can be attached to the point (optional).
+    return values_table
 
-    for timestamp, value in values_table:
-        if table in ["davis" "CRDavis"]:
-            csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
-                                                (timestamp.isoformat(' '), value, fff, ggg, iii, aaa, note)]) +
-                                     "\n")
-        else:
-            # Need to convert arduino logger time into unix time (add 946684800)
-            # and then to UTC-5 (add 18000)
-            timestamp_dt = datetime.datetime.fromtimestamp(timestamp+946684800+18000, tz=pytz.timezone('EST'))
-            timestamp_dt2 = timestamp_dt.replace(tzinfo=None)
-            csvdata2 += csvdata.join("\n".join(["%s"",""%s"",""%s"",""%s"",""%s"",""%s"",""%s" %
-                                                (timestamp_dt2.isoformat(' '), value, fff, ggg, iii, aaa, note)]) +
-                                     "\n")
 
-    # Convert the datastring into a base64 object
-    csvbytes = base64.b64encode(csvdata2)
+def create_appendable_csv(data_table):
+    """
+    This takes a pandas data frame and converts it to a base64 string ready to read into the
+    Aquarius API.
+    :param data_table: A python data frame with a date-time index and a "value" column.
+        It also, optionally, can have the fields "flag", "grade", "interpolation",
+        "approval", and "note".
+    :return: A base64 text string.
+    """
+
+    if 'flag' not in data_table:
+        data_table['flag'] = ""
+    if 'grade' not in data_table:
+        data_table['grade'] = ""
+    if 'interpolation' not in data_table:
+        data_table['interpolation'] = ""
+    if 'approval' not in data_table:
+        data_table['approval'] = ""
+    if 'note' not in data_table:
+        data_table['note'] = ""
+
+    # Output a CSV
+    csvdata = data_table.to_csv(header=False, date_format='%Y-%m-%dT%H:%M:%S')
+
+    # Convert the data string into a base64 object
+    csvbytes = base64.b64encode(csvdata)
 
     return csvbytes
 
@@ -193,14 +218,14 @@ def aq_timeseries_append(ts_numeric_id, appendbytes, cookie, debug=False):
     Appends data to an aquarius time series given a base64 encoded csv string with the following values:
         datetime(isoformat), value, flag, grade, interpolation, approval, note
     :param ts_numeric_id: The integer primary key of an aquarius time series
-    :param appendbytes: Base64 csv string as above
+    :param appendbytes: Base64 csv string with ISO-datetime, value, flag, grade, interpolation, approval, note
     :param cookie: The cookie wiith the session ID.  Get via the get_aq_auth_token function.
     :param debug: Says whether or not to issue print statements.
     :return: The append result from the SOAP client
     """
 
     # Call up the Aquarius Acquisition SOAP API
-    client = suds.client.Client(aq_acquisition_url)
+    client = suds.client.Client(aq_acquisition_url, timeout=325)
     client.options.transport.cookiejar = cookie
     empty_result = client.factory.create('ns0:AppendResult')
 
@@ -227,7 +252,7 @@ def aq_timeseries_append(ts_numeric_id, appendbytes, cookie, debug=False):
                 if debug:
                     print "      Error: %s" % sys.exc_info()[0]
                     print '      %s' % e
-                    print '      Retrying in 30 seconds' % e
+                    print '      Retrying in 30 seconds'
                 time.sleep(30)
             else:
                 if debug:

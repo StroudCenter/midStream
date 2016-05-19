@@ -19,8 +19,8 @@ import aq_functions as aq
 
 # Set up initial parameters - these are rewritten when run from the command prompt.
 past_hours_to_append = None  # Sets number of hours in the past to append, use None for all time
-table = "SL055"  # Selects a single table to append from, often a logger number, use None for all loggers
-column = None  # Selects a single column to append from, often a variable code, use None for all columns
+table = "SL031"  # Selects a single table to append from, often a logger number, use None for all loggers
+column = "CTDcond"  # Selects a single column to append from, often a variable code, use None for all columns
 
 
 # Set up a parser for command line options
@@ -114,12 +114,13 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
         else:
             query_start = query_start_utc.astimezone(eastern_standard_time)
 
-    appendbytes = aq.get_data_from_dreamhost_table(table_name, table_column_name,
-                                                   series_start, series_end,
-                                                   query_start=query_start, query_end=None,
-                                                   debug=debug)
+    data_table = aq.get_data_from_dreamhost_table(table_name, table_column_name,
+                                                  series_start, series_end,
+                                                  query_start=query_start, query_end=None,
+                                                  debug=debug)
+    append_bytes = aq.create_appendable_csv(data_table)
 
-    AppendResult = aq.aq_timeseries_append(ts_numeric_id, appendbytes, debug=debug, cookie=cookie)
+    AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug, cookie=cookie)
 
     if Log_to_file:
         text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
