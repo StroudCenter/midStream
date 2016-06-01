@@ -11,16 +11,18 @@ This uses command line arguments to decide what to append
 """
 
 import datetime
+import time
 import pytz
 import os
 import sys
 import argparse
+import numpy as np
 import aq_functions as aq
 
 # Set up initial parameters - these are rewritten when run from the command prompt.
 past_hours_to_append = None  # Sets number of hours in the past to append, use None for all time
-table = "SL031"  # Selects a single table to append from, often a logger number, use None for all loggers
-column = "CTDcond"  # Selects a single column to append from, often a variable code, use None for all columns
+table = "SL054"  # Selects a single table to append from, often a logger number, use None for all loggers
+column = "CTDtemp"  # Selects a single column to append from, often a variable code, use None for all columns
 
 
 # Set up a parser for command line options
@@ -100,10 +102,10 @@ if Log_to_file:
     text_file.write("Series, Table, Column, NumericIdentifier, TextIdentifier, NumPointsAppended, AppendToken  \n")
 
 
-loopnum = 1
+i = 1
 for ts_numeric_id, table_name, table_column_name, series_start, series_end in AqSeries:
     if debug:
-        print "Attempting to append series %s of %s" % (loopnum, len(AqSeries))
+        print "Attempting to append series %s of %s" % (i, len(AqSeries))
         print "Data being appended to Time Series # %s" % ts_numeric_id
 
     if past_hours_to_append is None:
@@ -118,17 +120,40 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
                                                   series_start, series_end,
                                                   query_start=query_start, query_end=None,
                                                   debug=debug)
+
+    if len(data_table) > 10000:
+        grouped = data_table.groupby(np.arange(len(data_table))//7500)
+
+        j = 1
+    #     for name, group in grouped:
+    #         if debug:
+    #             print "Appending chunk # %s of %s with %s values beginning on %s" % \
+    #                   (j, len(grouped), len(group), group.index.get_value(group.index, 0))
+    #         k = i + j/100
+    #         append_bytes = aq.create_appendable_csv(group)
+    #         AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug, cookie=cookie)
+    #         if Log_to_file:
+    #             text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
+    #                             % (k, table_name, table_column_name,
+    #                                ts_numeric_id, AppendResult.TsIdentifier,
+    #                                AppendResult.NumPointsAppended, AppendResult.AppendToken))
+    #         time.sleep(325)
+    #         j += 1
+    #
+    # else:
+    #     if debug:
+    #         print "Appending in a single call to the API"
+
     append_bytes = aq.create_appendable_csv(data_table)
-
     AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug, cookie=cookie)
-
     if Log_to_file:
         text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
-                        % (loopnum, table_name, table_column_name,
+                        % (i, table_name, table_column_name,
                            ts_numeric_id, AppendResult.TsIdentifier,
                            AppendResult.NumPointsAppended, AppendResult.AppendToken))
+    time.sleep(1)
 
-    loopnum += 1
+    i += 1
 
 
 # Find the date/time the script finished:
@@ -138,8 +163,8 @@ runtime = end_datetime_utc - start_datetime_utc
 
 # Close out the text file
 if debug:
-    print "Script completed at %s \n" % end_datetime_loc
-    print "Total time for script: %s \n" % runtime
+    print "Script completed at %s" % end_datetime_loc
+    print "Total time for script: %s" % runtime
 if Log_to_file:
     text_file.write("\n")
     text_file.write("Script completed at %s \n" % end_datetime_loc)

@@ -1,4 +1,6 @@
 import wof.models as wof_base
+import dateutil.parser as dateparser
+
 
 class Variable(wof_base.BaseVariable):
     # Properties common to all variables in this example
@@ -7,7 +9,7 @@ class Variable(wof_base.BaseVariable):
     ValueType = 'Field Observation'
     DataType = 'Continuous'
     NoDataValue = -9999
-    TimeSupport = 15 # This defines the number of minutes between sensor readings
+    TimeSupport = 15  # This defines the number of minutes between sensor readings
     TimeUnitsID = 1
     GeneralCategory = wof_base.GeneralCategoryTypes.HYDROLOGY
     TimeUnits = wof_base.BaseUnits()
@@ -17,9 +19,10 @@ class Variable(wof_base.BaseVariable):
     TimeUnits.UnitsAbbreviation = 'min'
     csvColumn = 4
 
+
 class Site(wof_base.BaseSite):
     # Properties common to all sites in this example
-    LatLongDatum = wof_base.BaseSpatialReference() # for SRSID and SRSName
+    LatLongDatum = wof_base.BaseSpatialReference()  # for SRSID and SRSName
     State = 'Pennsylvania'
 
 
@@ -53,10 +56,8 @@ class Method(wof_base.BaseMethod):
 
 class QualityControlLevel(wof_base.BaseQualityControlLevel):
     # Only one in this example
-    QualityControlLevelID = \
-            wof_base.QualityControlLevelTypes['RAW_DATA'][1]
-    QualityControlLevelCode = \
-            wof_base.QualityControlLevelTypes['RAW_DATA'][0]
+    QualityControlLevelID = wof_base.QualityControlLevelTypes['RAW_DATA'][1]
+    QualityControlLevelCode = wof_base.QualityControlLevelTypes['RAW_DATA'][0]
 
 
 class DataValue(wof_base.BaseDataValue):
@@ -65,19 +66,17 @@ class DataValue(wof_base.BaseDataValue):
     CensorCode = 'nc'
     MethodID = 1    # Default MethodID
     SourceID = 4    # Default SourceID
-    QualityControlLevelID = \
-            wof_base.QualityControlLevelTypes['RAW_DATA'][1]
-    QualityControlLevel = \
-            wof_base.QualityControlLevelTypes['RAW_DATA'][0]
+    QualityControlLevelID = wof_base.QualityControlLevelTypes['RAW_DATA'][1]
+    QualityControlLevel = wof_base.QualityControlLevelTypes['RAW_DATA'][0]
 
 
 class Series(wof_base.BaseSeries):
     # Properties common to all series in this example
-    BeginDateTime = '2008-01-01T00:00-06'
-    EndDateTime = '2008-04-30T00:00-06'
-    BeginDateTimeUTC = '2008-01-01T06:00Z'
-    EndDateTimeUTC = '2008-04-30T06:00Z'
-    ValueCount = 0 # default to no values
+    BeginDateTime = dateparser.parse('2008-01-01T00:00:00-06:00')
+    EndDateTime = dateparser.parse('2008-04-30T00:00:00-06:00')
+    BeginDateTimeUTC = dateparser.parse('2008-01-01T06:00Z')
+    EndDateTimeUTC = dateparser.parse('2008-04-30T06:00Z')
+    ValueCount = 0  # default to no values
 
     qc_level = QualityControlLevel()
     QualityControlLevelID = qc_level.QualityControlLevelID

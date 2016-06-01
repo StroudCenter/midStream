@@ -12,7 +12,6 @@ import pymysql
 import pandas as pd
 import time
 import datetime
-import pytz
 import base64
 import sys
 import socket
@@ -22,6 +21,9 @@ from dbinfo import aq_acquisition_url, aq_username, aq_password, dbhost, dbname,
 
 __author__ = 'Sara Geleskie Damiano'
 __contact__ = 'sdamiano@stroudcenter.org'
+
+# Turn off chained assignment warning.
+pd.options.mode.chained_assignment = None  # default='warn'
 
 
 # Get an authentication token to open the path into the API
@@ -101,6 +103,35 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
     return aq_series
 
 
+def convert_rtc_time_to_python(logger_time, timezone):
+    """
+    This function converts an arduino logger time into a time-zone aware python date-time object.
+    Arduino's internal clocks (Real Time Clock (RTC) modules like the DS3231 chip)
+    are converted to unix time by adding 946684800 - This moves the epoch time from January 1, 2000 as used by
+    the RTC module to January 1, 1960 as used in Unix and other systems.
+    :param logger_time: An timestamp in seconds since January 1, 2000
+    :param timezone: a pytz timezone object
+    :return: returns a time-zone aware python date time object
+    """
+    unix_time = logger_time + 946684800
+    datetime_unaware = datetime.datetime.utcfromtimestamp(unix_time)
+    datetime_aware = timezone.localize(datetime_unaware)
+    return datetime_aware
+
+
+def convert_python_time_to_rtc(pydatetime, timezone):
+    """
+    This is the reverse of convert_rtc_time_to_python
+    :param pydatetime: A python time-zone aware datetime object
+    :param timezone: the timezone of the arduino/RTC
+    :return: and interger of seconds since January 1, 2000
+    """
+    datetime_aware = pydatetime.astimezone(timezone)
+    unix_time = (datetime_aware - timezone.localize(datetime.datetime(1970, 1, 1))).total_seconds()
+    sec_from_rtc_epoch = unix_time - 946684800
+    return sec_from_rtc_epoch
+
+
 def get_data_from_dreamhost_table(table, column, series_start, series_end,
                                   query_start=None, query_end=None, debug=False):
     """
@@ -155,7 +186,7 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
     # Set up connection to the DreamHost MySQL database
     conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
 
-    values_table = pd.read_sql(query_text,conn)
+    values_table = pd.read_sql(query_text, conn)
 
     # Close out the database connections
     conn.close()  # close the database connection
@@ -194,18 +225,18 @@ def create_appendable_csv(data_table):
     """
 
     if 'flag' not in data_table:
-        data_table['flag'] = ""
+        data_table.loc[:, 'flag'] = ""
     if 'grade' not in data_table:
-        data_table['grade'] = ""
+        data_table.loc[:, 'grade'] = ""
     if 'interpolation' not in data_table:
-        data_table['interpolation'] = ""
+        data_table.loc[:, 'interpolation'] = ""
     if 'approval' not in data_table:
-        data_table['approval'] = ""
+        data_table.loc[:, 'approval'] = ""
     if 'note' not in data_table:
-        data_table['note'] = ""
+        data_table.loc[:, 'note'] = ""
 
     # Output a CSV
-    csvdata = data_table.to_csv(header=False, date_format='%Y-%m-%dT%H:%M:%S')
+    csvdata = data_table.to_csv(header=False, date_format='%Y-%m-%d %H:%M:%S')
 
     # Convert the data string into a base64 object
     csvbytes = base64.b64encode(csvdata)
