@@ -809,9 +809,9 @@ class czoDao(BaseDao):
             query_end_py = min(series_result[0].EndDateTime, e).astimezone(eastern_standard_time)
             query_end = convert_python_time_to_rtc(query_end_py, eastern_standard_time)
 
-        query = "SELECT " + dt_col + ", " + column_name \
+        query = "SELECT DISTINCT " + dt_col + ", " + column_name \
                 + " FROM " + table_name \
-                + " WHERE " + column_name + " != ''" \
+                + " WHERE " + column_name + " IS NOT NULL " \
                 + " AND " + dt_col + " >= '" + str(query_start) + "'" \
                 + " AND " + dt_col + " <= '" + str(query_end) + "'"
 

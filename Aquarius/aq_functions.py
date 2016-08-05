@@ -12,9 +12,12 @@ import pymysql
 import pandas as pd
 import time
 import datetime
+import pytz
 import base64
 import sys
 import socket
+import urllib2
+import numpy as np
 
 # Bring in all of the database connection information.
 from dbinfo import aq_acquisition_url, aq_username, aq_password, dbhost, dbname, dbuser, dbpswd
@@ -27,27 +30,53 @@ pd.options.mode.chained_assignment = None  # default='warn'
 
 
 # Get an authentication token to open the path into the API
-def get_aq_auth_token(debug=False):
+def get_aq_auth_token(username, password, debug=False):
     """
     Sets up an authentication token for the soap session
     """
     # Call up the Aquarius Aquisition SOAP API
 
-    client = suds.client.Client(aq_acquisition_url)
     try:
-        auth_token = client.service.GetAuthToken(aq_username, aq_password)
-        cookie = client.options.transport.cookiejar
-    except suds.WebFault, e:
+        client = suds.client.Client(aq_acquisition_url, timeout=15)
+    except Exception, e:
         if debug:
             print "Error Getting Token: %s" % sys.exc_info()[0]
             print '%s' % e
             print "Stopping all program execution"
-        sys.exit("No Authentication Token")
+        sys.exit("Unable to connect to server")
     else:
-        if debug:
-            print "Authentication Token: %s" % auth_token
-            print "Session Cookie %s" % cookie
-        return auth_token, cookie
+        try:
+            auth_token = client.service.GetAuthToken(username, password)
+            cookie = client.options.transport.cookiejar
+        except suds.WebFault, e:
+            if debug:
+                print "Error Getting Token: %s" % sys.exc_info()[0]
+                print '%s' % e
+                print "Stopping all program execution"
+            sys.exit("No Authentication Token")
+        else:
+            if debug:
+                print "Authentication Token: %s" % auth_token
+                print "Session Cookie %s" % cookie
+            return auth_token, cookie
+load_auth_token, load_cookie = get_aq_auth_token(aq_username, aq_password)
+
+
+def check_aq_connection(cookie=load_cookie):
+    # Call up the Aquarius Acquisition SOAP API
+    try:
+        client = suds.client.Client(aq_acquisition_url, timeout=15)
+        client.options.transport.cookiejar = cookie
+    except Exception, e:
+        is_valid = False
+    else:
+        try:
+            is_valid = client.service.IsConnectionValid()
+        except Exception, e:
+            is_valid = False
+        else:
+            e = ""
+    return is_valid, e
 
 
 def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=False):
@@ -78,9 +107,9 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
     # Look for Dataseries that have an associated Aquarius Time Series ID
     query_text = \
         "SELECT DISTINCT AQTimeSeriesID, TableName, TableColumnName, DateTimeSeriesStart, DateTimeSeriesEnd " \
-        "FROM Series_for_midStream " \
-        "WHERE AQTimeSeriesID != 0" + str1 + str2 + str3 + \
-        "ORDER BY TableName, AQTimeSeriesID ;"
+        " FROM Series_for_midStream " \
+        " WHERE AQTimeSeriesID != 0 " + str1 + str2 + str3 + \
+        " ORDER BY TableName, AQTimeSeriesID ;"
 
     if debug:
         print "Timeseries selected using the query:"
@@ -92,15 +121,24 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
 
     cur.execute(query_text)
 
-    aq_series = cur.fetchall()
+    aq_series = list(cur.fetchall())
+    aq_series_list = [list(series) for series in aq_series]
+
+    for series in aq_series_list:
+        if series[3] is not None:
+            series[3] = pytz.timezone('Etc/GMT+5').localize(series[3])
+        if series[4] is not None:
+            series[4] = pytz.timezone('Etc/GMT+5').localize(series[4])
     if debug:
+        # print aq_series_list
+        # print type(aq_series)
         print "which returns %s series" % len(aq_series)
 
     # Close out the database connections
     cur.close()  # close the database cursor
     conn.close()  # close the database connection
 
-    return aq_series
+    return aq_series_list
 
 
 def convert_rtc_time_to_python(logger_time, timezone):
@@ -124,7 +162,7 @@ def convert_python_time_to_rtc(pydatetime, timezone):
     This is the reverse of convert_rtc_time_to_python
     :param pydatetime: A python time-zone aware datetime object
     :param timezone: the timezone of the arduino/RTC
-    :return: and interger of seconds since January 1, 2000
+    :return: an interger of seconds since January 1, 2000 in the RTC's timezone
     """
     datetime_aware = pydatetime.astimezone(timezone)
     unix_time = (datetime_aware - timezone.localize(datetime.datetime(1970, 1, 1))).total_seconds()
@@ -132,7 +170,30 @@ def convert_python_time_to_rtc(pydatetime, timezone):
     return sec_from_rtc_epoch
 
 
-def get_data_from_dreamhost_table(table, column, series_start, series_end,
+def get_aquarius_timezone(ts_numeric_id, cookie=load_cookie):
+    # Call up the Aquarius Acquisition SOAP API
+    client = suds.client.Client(aq_acquisition_url, timeout=325)
+    client.options.transport.cookiejar = cookie
+
+    all_locations = client.service.GetAllLocations().LocationDTO
+    for location in all_locations:
+        utc_offset_float = location.UtcOffset
+        utc_offset_string = '{:+3.0f}'.format(utc_offset_float*-1).strip()
+        timezone = pytz.timezone('Etc/GMT'+utc_offset_string)
+        all_descriptions_array = client.service.GetTimeSeriesListForLocation(location.LocationId)
+        try:
+            all_descriptions = all_descriptions_array.TimeSeriesDescription
+        except AttributeError:
+            pass
+        else:
+            for description in all_descriptions:
+                ts_id = description.AqDataID
+                if ts_id == ts_numeric_id:
+                    return timezone
+    return None
+
+
+def get_data_from_dreamhost_table(table, column, series_start=None, series_end=None,
                                   query_start=None, query_end=None, debug=False):
     """
     Returns a pandas data frame with the timestamp and data value from a given table and column.
@@ -147,36 +208,38 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
     """
 
     # Set up an min and max time for when those values are NULL in dreamhost
-    if series_end is None:
-        series_end = datetime.datetime.now() + datetime.timedelta(days=1)  # Future times clearly not valid
     if series_start is None:
-        series_start = datetime.datetime(2000, 1, 1, 0, 0, 0)
+        series_start = pytz.utc.localize(datetime.datetime(2000, 1, 1, 0, 0, 0))
+    if series_end is None:
+        series_end = datetime.datetime.now(pytz.utc) + datetime.timedelta(days=1)  # Future times clearly not valid
     # Set up an min and max time for when those values are NULL in dreamhost
-    if query_end is None:
-        query_end = datetime.datetime.now() + datetime.timedelta(days=1)  # Future times clearly not valid
     if query_start is None:
-        query_start = datetime.datetime(2000, 1, 1, 0, 0, 0)
+        query_start = pytz.utc.localize(datetime.datetime(2000, 1, 1, 0, 0, 0))
+    if query_end is None:
+        query_end = datetime.datetime.now(pytz.utc) + datetime.timedelta(days=1)  # Future times clearly not valid
 
     # Creating the query text here because the character masking works oddly
     # in the cur.execute function.
+
     if table in ["davis", "CRDavis"]:
-        dt_col = "Date"
+        # The meteobridges streaming this data stream a column of time in UTC
+        dt_col = "mbutcdatetime"
+        sql_start = max(series_start, query_start).astimezone(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
+        sql_end = min(series_end, query_end).astimezone(pytz.utc).strftime("%Y-%m-%d %H:%M:%S")
     else:
         dt_col = "Loggertime"
+        sql_start_py = max(series_start, query_start).astimezone(pytz.timezone('Etc/GMT+5'))
+        sql_start = convert_python_time_to_rtc(sql_start_py, pytz.timezone('Etc/GMT+5'))
+        sql_end_py = min(series_end, query_end).astimezone(pytz.timezone('Etc/GMT+5'))
+        sql_end = convert_python_time_to_rtc(sql_end_py, pytz.timezone('Etc/GMT+5'))
 
-    query_text = "SELECT " + dt_col + ", " + column + " as data_value " \
-                 + "FROM " + table + " WHERE " \
-                 + "Date < " + str(series_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                 + " AND " \
-                 + "Date > " + str(series_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                 + " AND " \
-                 + "Date < " + str(query_end.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                 + " AND " \
-                 + "Date > " + str(query_start.strftime("'%Y-%m-%d %H:%M:%S'")) \
-                 + " AND " \
-                 + column + " IS NOT NULL " \
-                 + "ORDER BY " + dt_col \
-                 + ";"
+    query_text = "SELECT DISTINCT " + dt_col + ", " + column + " as data_value " \
+                 + "FROM " + table \
+                 + " WHERE " + column + " IS NOT NULL " \
+                 + " AND " + dt_col + " >= '" + str(sql_start) + "'" \
+                 + " AND " + dt_col + " <= '" + str(sql_end) + "'" \
+                 + " ORDER BY " + dt_col \
+                 + " ;"
 
     if debug:
         print "   Data selected using the query:"
@@ -196,20 +259,28 @@ def get_data_from_dreamhost_table(table, column, series_start, series_end,
         t2 = datetime.datetime.now()
         print "   SQL execution took %s" % (t2 - t1)
 
-    if table in ["davis", "CRDavis"]:
-        values_table['timestamp'] = values_table["Date"]
-        values_table.set_index(['timestamp'], inplace=True)
-        values_table.drop('Date', axis=1, inplace=True)
-    else:
-        # Need to convert arduino logger time into unix time (add 946684800)
-        values_table['unix_time'] = values_table["Loggertime"] + 946684800
-        values_table['timestamp'] = pd.to_datetime(values_table['unix_time'], unit='s')
-        values_table.set_index(['timestamp'], inplace=True)
-        values_table.drop('Loggertime', axis=1, inplace=True)
-        values_table.drop('unix_time', axis=1, inplace=True)
-    # print values_table.head(5)
-    # print values_table.dtypes
-    # print values_table.index
+    if len(values_table) > 0:
+        if table in ["davis", "CRDavis"]:
+            values_table['timestamp'] = values_table[dt_col]
+            values_table.set_index(['timestamp'], inplace=True)
+            values_table.drop(dt_col, axis=1, inplace=True)
+            values_table.index = values_table.index.tz_localize('UTC')
+            if table == "davis":
+                values_table.index = values_table.index.tz_convert(pytz.timezone('Etc/GMT+5'))
+            if table == "CRDavis":
+                values_table.index = values_table.index.tz_convert(pytz.timezone('Etc/GMT+6'))
+        else:
+            # Need to convert arduino logger time into unix time (add 946684800)
+            values_table['timestamp'] = np.vectorize(convert_rtc_time_to_python)(values_table[dt_col],
+                                                                                 pytz.timezone('Etc/GMT+5'))
+            values_table.set_index(['timestamp'], inplace=True)
+            values_table.drop(dt_col, axis=1, inplace=True)
+            values_table.index = values_table.index.tz_convert(pytz.timezone('Etc/GMT+5'))
+
+        if debug:
+            print "The first and last rows to append:"
+            print values_table.head(1)
+            print values_table.tail(1)
 
     return values_table
 
@@ -224,27 +295,31 @@ def create_appendable_csv(data_table):
     :return: A base64 text string.
     """
 
-    if 'flag' not in data_table:
-        data_table.loc[:, 'flag'] = ""
-    if 'grade' not in data_table:
-        data_table.loc[:, 'grade'] = ""
-    if 'interpolation' not in data_table:
-        data_table.loc[:, 'interpolation'] = ""
-    if 'approval' not in data_table:
-        data_table.loc[:, 'approval'] = ""
-    if 'note' not in data_table:
-        data_table.loc[:, 'note'] = ""
+    if len(data_table) > 0:
+        if 'flag' not in data_table:
+            data_table.loc[:, 'flag'] = ""
+        if 'grade' not in data_table:
+            data_table.loc[:, 'grade'] = ""
+        if 'interpolation' not in data_table:
+            data_table.loc[:, 'interpolation'] = ""
+        if 'approval' not in data_table:
+            data_table.loc[:, 'approval'] = ""
+        if 'note' not in data_table:
+            data_table.loc[:, 'note'] = ""
 
-    # Output a CSV
-    csvdata = data_table.to_csv(header=False, date_format='%Y-%m-%d %H:%M:%S')
+        # Output a CSV
+        csvdata = data_table.to_csv(header=False, date_format='%Y-%m-%d %H:%M:%S')
 
-    # Convert the data string into a base64 object
-    csvbytes = base64.b64encode(csvdata)
+        # Convert the data string into a base64 object
+        csvbytes = base64.b64encode(csvdata)
+
+    else:
+        csvbytes = ""
 
     return csvbytes
 
 
-def aq_timeseries_append(ts_numeric_id, appendbytes, cookie, debug=False):
+def aq_timeseries_append(ts_numeric_id, appendbytes, cookie=load_cookie, debug=False):
     """
     Appends data to an aquarius time series given a base64 encoded csv string with the following values:
         datetime(isoformat), value, flag, grade, interpolation, approval, note

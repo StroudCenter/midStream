@@ -11,18 +11,21 @@ This uses command line arguments to decide what to append
 """
 
 import datetime
-import time
 import pytz
 import os
 import sys
 import argparse
-import numpy as np
 import aq_functions as aq
+import time
+import numpy as np
+
+__author__ = 'Sara Geleskie Damiano'
+__contact__ = 'sdamiano@stroudcenter.org'
 
 # Set up initial parameters - these are rewritten when run from the command prompt.
-past_hours_to_append = None  # Sets number of hours in the past to append, use None for all time
-table = "SL054"  # Selects a single table to append from, often a logger number, use None for all loggers
-column = "CTDtemp"  # Selects a single column to append from, often a variable code, use None for all columns
+past_hours_to_append = 366  # Sets number of hours in the past to append, use None for all time
+table = None  # Selects a single table to append from, often a logger number, use None for all loggers
+column = None  # Selects a single column to append from, often a variable code, use None for all columns
 
 
 # Set up a parser for command line options
@@ -49,34 +52,97 @@ else:
     debug = True
     Log_to_file = True
 
-
-# Find the date/time the script was started:
-start_datetime_utc = datetime.datetime.now(pytz.utc)
 # Deal with timezones...
 eastern_standard_time = pytz.timezone('Etc/GMT+5')
 eastern_local_time = pytz.timezone('US/Eastern')
 costa_rica_time = pytz.timezone('Etc/GMT+6')
-start_datetime_est = start_datetime_utc.astimezone(eastern_standard_time)
-start_datetime_loc = start_datetime_utc.astimezone(eastern_local_time)
 
-# Get the path and directory of this script:
-script_name_with_path = os.path.realpath(__file__)
-script_directory = os.path.dirname(os.path.realpath(__file__))
 
-if debug:
-    print "Now running script: %s" % script_name_with_path
-    print "Script started at %s" % start_datetime_loc
+def start_log():
+    # Find the date/time the script was started:
+    start_log_dt_utc = datetime.datetime.now(pytz.utc)
+    start_log_dt_loc = start_log_dt_utc.astimezone(eastern_local_time)
 
-# Open file for logging
-if Log_to_file:
-    logfile = script_directory + "\AppendLogs\AppendLog_" + start_datetime_loc.strftime("%Y%m%d") + ".txt"
+    # Get the path and directory of this script:
+    script_name_with_path = os.path.realpath(__file__)
+    script_directory = os.path.dirname(os.path.realpath(__file__))
+
     if debug:
-        print "Log being written to: %s" % logfile
-    text_file = open(logfile, "a+")
-    text_file.write("Script: %s \n" % script_name_with_path)
-    text_file.write("Script started at %s \n \n" % start_datetime_loc)
-else:
-    text_file = ""
+        print "Now running script: %s" % script_name_with_path
+        print "Script started at %s" % start_log_dt_loc
+
+    # Open file for logging
+    if Log_to_file:
+        logfile = script_directory + "\AppendLogs\AppendLog_" + start_log_dt_loc.strftime("%Y%m%d") + ".txt"
+        if debug:
+            print "Log being written to: %s" % logfile
+        open_log_file = open(logfile, "a+")
+
+        open_log_file.write(
+            "*******************************************************************************************************\n")
+        open_log_file.write("Script: %s \n" % script_name_with_path)
+        open_log_file.write(
+            "*******************************************************************************************************\n")
+        open_log_file.write("\n")
+        open_log_file.write("Script started at %s \n \n" % start_log_dt_loc)
+    else:
+        open_log_file = ""
+
+    return open_log_file, start_log_dt_utc
+
+
+def end_log(open_log_file, start_log_dt_utc):
+    # Find the date/time the script finished:
+    end_datetime_utc = datetime.datetime.now(pytz.utc)
+    end_datetime_loc = end_datetime_utc.astimezone(eastern_local_time)
+    runtime = end_datetime_utc - start_log_dt_utc
+
+    # Close out the text file
+    if debug:
+        print "Script completed at %s" % end_datetime_loc
+        print "Total time for script: %s" % runtime
+    if Log_to_file:
+        open_log_file.write("\n")
+        open_log_file.write("Script completed at %s \n" % end_datetime_loc)
+        open_log_file.write("Total time for script: %s \n" % runtime)
+        open_log_file.write(
+            "*******************************************************************************************************\n")
+        open_log_file.write("\n \n")
+        open_log_file.close()
+
+
+def check_valid_connection():
+    """
+    Check that there is a valid connection open to the Aquarius server.  If not, abort script.
+    NOTE:  If no connection to the server at all is established or an authentication token cannot be returned, the
+    program will quit immediately upon loading the aq_functions module.  This will catch if the connection has died.
+    """
+    start_check = datetime.datetime.now()
+    if debug:
+        print "Checking for valid connection"
+    is_valid, error = aq.check_aq_connection()
+    if not is_valid:
+        # If the connection has died, print out a note and write to the log, then kill script.
+        if debug:
+            print "Aborting script because no valid connection has been established with the Aquarius server."
+            print "Server returned error: %s" % error
+        if Log_to_file:
+            text_file.write("Script aborted because no valid connection was established with the Aquarius server.\n")
+            text_file.write("Server returned error: %s\n" % error)
+        end_log(text_file, start_datetime_utc)
+        sys.exit("Unable to connect to server")
+    else:
+        end_check = datetime.datetime.now()
+        if debug:
+            print "Valid connection returned after %s seconds" % (end_check - start_check)
+    return
+
+
+# Open the log
+text_file, start_datetime_utc = start_log()
+
+# Check for a valid connection
+check_valid_connection()
 
 
 # Set the time cutoff for recent series.
@@ -88,12 +154,6 @@ else:
     query_start_utc = start_datetime_utc - datetime.timedelta(hours=past_hours_to_append)
 
 
-# Get an authentication token and sessionID for Aquarius
-# Doing this once here instead of in the aq.aq_timeseries_append function
-# to avoid opening a new session for each timeseries appended.
-token, cookie = aq.get_aq_auth_token(debug=debug)
-
-
 # Get data for all series that are available
 AqSeries = aq.get_dreamhost_series(cutoff_for_recent=current_timeseries_cutoff_est,
                                    table=table, column=column, debug=debug)
@@ -102,8 +162,10 @@ if Log_to_file:
     text_file.write("Series, Table, Column, NumericIdentifier, TextIdentifier, NumPointsAppended, AppendToken  \n")
 
 
+# Looping through each time series and appending the data
 i = 1
 for ts_numeric_id, table_name, table_column_name, series_start, series_end in AqSeries:
+    check_valid_connection()
     if debug:
         print "Attempting to append series %s of %s" % (i, len(AqSeries))
         print "Data being appended to Time Series # %s" % ts_numeric_id
@@ -111,8 +173,8 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
     if past_hours_to_append is None:
         query_start = None
     else:
-        if table_name == "CRDavis":
-            query_start = query_start_utc.astimezone(costa_rica_time)
+        if table_name in ["davis", "CRDavis"]:
+            query_start = query_start_utc.astimezone(pytz.utc)
         else:
             query_start = query_start_utc.astimezone(eastern_standard_time)
 
@@ -121,17 +183,17 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
                                                   query_start=query_start, query_end=None,
                                                   debug=debug)
 
-    if len(data_table) > 10000:
-        grouped = data_table.groupby(np.arange(len(data_table))//7500)
-
-        j = 1
+    # if len(data_table) > 10000:
+    #     grouped = data_table.groupby(np.arange(len(data_table))//7500)
+    #
+    #     j = 1
     #     for name, group in grouped:
     #         if debug:
     #             print "Appending chunk # %s of %s with %s values beginning on %s" % \
     #                   (j, len(grouped), len(group), group.index.get_value(group.index, 0))
     #         k = i + j/100
     #         append_bytes = aq.create_appendable_csv(group)
-    #         AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug, cookie=cookie)
+    #         AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
     #         if Log_to_file:
     #             text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
     #                             % (k, table_name, table_column_name,
@@ -145,31 +207,17 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
     #         print "Appending in a single call to the API"
 
     append_bytes = aq.create_appendable_csv(data_table)
-    AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug, cookie=cookie)
+    AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
+    # TODO: stop execution of further requests after an error.
     if Log_to_file:
         text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
                         % (i, table_name, table_column_name,
                            ts_numeric_id, AppendResult.TsIdentifier,
                            AppendResult.NumPointsAppended, AppendResult.AppendToken))
-    time.sleep(1)
+    # time.sleep(1)
 
     i += 1
 
 
-# Find the date/time the script finished:
-end_datetime_utc = datetime.datetime.now(pytz.utc)
-end_datetime_loc = end_datetime_utc.astimezone(eastern_local_time)
-runtime = end_datetime_utc - start_datetime_utc
-
 # Close out the text file
-if debug:
-    print "Script completed at %s" % end_datetime_loc
-    print "Total time for script: %s" % runtime
-if Log_to_file:
-    text_file.write("\n")
-    text_file.write("Script completed at %s \n" % end_datetime_loc)
-    text_file.write("Total time for script: %s \n" % runtime)
-    text_file.write("========================================================================================= \n")
-    text_file.write("\n \n")
-    text_file.write("========================================================================================= \n")
-    text_file.close()
+end_log(text_file, start_datetime_utc)
