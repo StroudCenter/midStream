@@ -1,35 +1,32 @@
 # This is the data access object to be used with a PostgreSQL implementation
 # of the logger database
 
-from datetime import timedelta
 import csv
-
-from dateutil.parser import parse
-from dateutil.tz import tzoffset
-
-from pytz import timezone
-import pytz
-utc = pytz.utc
-eastern = timezone('US/Eastern')
-
-from wof.dao import BaseDao
-import wof.models as wof_base
-
 import copy
 import czo_model
 import time
 import pymysql
+import pytz
+import wof.models as wof_base
 
-#For MySQL Access
+from datetime import timedelta
+from dateutil.parser import parse
+from dateutil.tz import tzoffset
+from pytz import timezone
+from wof.dao import BaseDao
+# For MySQL Access
 from dbinfo import dbhost, dbname, dbuser, dbpswd
 
+utc = pytz.utc
+eastern = timezone('US/Eastern')
 
 # if DEBUG_PRINT is True, lots of information will be printed to the console
 # which slows retrieval of data series significantly
 DEBUG_PRINT = False
 
+
 class czoDao(BaseDao):
-    #def __init__(self, values_file_path):
+    # def __init__(self, values_file_path):
     #    if DEBUG_PRINT:
     #        print '*CsvDao __init__'     
     #    self.values_file_path = values_file_path
@@ -39,7 +36,7 @@ class czoDao(BaseDao):
             print '*CsvDao __init__'     
 
     def __del__(self):
-        pass # Could end database session here for more sophisticated DAOs
+        pass  # Could end database session here for more sophisticated DAOs
 
     def create_site_from_row(self, row):
         """Returns a Site() object
@@ -57,7 +54,7 @@ class czoDao(BaseDao):
         if not (len(row) > 6):
             return
 
-        site = czo_model.Site() # create a new instance of site
+        site = czo_model.Site()  # create a new instance of site
         site.SiteID = row[0]    # and populate with site data
         site.SiteCode = row[1]
         site.SiteName = row[2]
@@ -82,11 +79,11 @@ class czoDao(BaseDao):
             print '*get_all_sites'        
 
         # Open a connection to the database
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()
         
         # this will find all the sites that have CURRENT real-time deployments
-        #TODO:  Include real-time deployments that have ended within 30 days.
+        # TODO:  Include real-time deployments that have ended within 30 days.
         # returns SiteID, SiteCode, SiteName, Latitude, Longitude, Elevation_m, spatialref SRSID
         cur.execute("""
         SELECT DISTINCT
@@ -137,7 +134,7 @@ class czoDao(BaseDao):
             return
 
         # Open a connection to the database
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()
 
         # this will find the site by site_code
@@ -180,7 +177,7 @@ class czoDao(BaseDao):
             return []
 
         # Open a connection to the database
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()
 
         sites = []
@@ -227,12 +224,12 @@ class czoDao(BaseDao):
         variables = []
         
         # Open a connection to the database
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()
         
         # this will return all the variables that 
         # are associated with real-time deployments that have not ended
-        #TODO:  Include real-time deployments that have ended within 30 days.
+        # TODO:  Include real-time deployments that have ended within 30 days.
         cur.execute("""
         SELECT DISTINCT
             VariableCode,
@@ -267,17 +264,17 @@ class czoDao(BaseDao):
             var1.TimeUnitsID = row[6]
             var1.DataType = row[7]
             var1.GeneralCategory = row[8]
-            #var1.ValueType = None
-                #Leaving empty assumes that the value type is "Feild Observation" from czo_model
-            #var1.IsRegular = None
-                #Leaving empty assumes that the IsRegular=TRUE from czo_model
-            #var1.NoDataValue = None
-                #Leaving empty assumes that the NoDataValue=-9999 from czo_model
-            #var1.VariableDescription = None
-                #At this time, we do not have a variable discription.
+            # var1.ValueType = None
+                # Leaving empty assumes that the value type is "Feild Observation" from czo_model
+            # var1.IsRegular = None
+                # Leaving empty assumes that the IsRegular=TRUE from czo_model
+            # var1.NoDataValue = None
+                # Leaving empty assumes that the NoDataValue=-9999 from czo_model
+            # var1.VariableDescription = None
+                # At this time, we do not have a variable discription.
 
-            #Search for the meta-data on the variable parameter units
-            var1_units = wof_base.BaseUnits() # create a sigle units instance
+            # Search for the meta-data on the variable parameter units
+            var1_units = wof_base.BaseUnits()  # create a sigle units instance
             var1_units.UnitsID = row[2]
             cur.execute("""
             SELECT
@@ -292,10 +289,10 @@ class czoDao(BaseDao):
             var1_units.UnitsName = db_unit[0]
             var1_units.UnitsType = db_unit[1]
             var1_units.UnitsAbbreviation = db_unit[2]
-            var1.VariableUnits = var1_units # assign the variable units to the units instance
+            var1.VariableUnits = var1_units  # assign the variable units to the units instance
             
-            #Search for the meta-data on the variable time-support units
-            var1_TimeUnits = wof_base.BaseUnits() # create a sigle units instance
+            # Search for the meta-data on the variable time-support units
+            var1_TimeUnits = wof_base.BaseUnits()  # create a sigle units instance
             var1_TimeUnits.UnitsID = row[6]
             cur.execute("""
             SELECT
@@ -310,7 +307,7 @@ class czoDao(BaseDao):
             var1_TimeUnits.UnitsName = db_unit[0]
             var1_TimeUnits.UnitsType = db_unit[1]
             var1_TimeUnits.UnitsAbbreviation = db_unit[2]
-            var1.TimeUnits = var1_TimeUnits # assign the variable units to the units instance
+            var1.TimeUnits = var1_TimeUnits  # assign the variable units to the units instance
 
             variables.append(copy.deepcopy(var1))
 
@@ -330,7 +327,7 @@ class czoDao(BaseDao):
             print '*get_variable_by_code: ' + var_code
 
         # Open a connection to the database
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()
 
         # this will return the variable info
@@ -369,17 +366,17 @@ class czoDao(BaseDao):
         var1.TimeUnitsID = row[6]
         var1.DataType = row[7]
         var1.GeneralCategory = row[8]
-        #var1.ValueType = None
-            #Leaving empty assumes that the value type is "Feild Observation" from czo_model
-        #var1.IsRegular = None
-            #Leaving empty assumes that the IsRegular=TRUE from czo_model
-        #var1.NoDataValue = None
-            #Leaving empty assumes that the NoDataValue=-9999 from czo_model
-        #var1.VariableDescription = None
-            #At this time, we do not have a variable discription.
+        # var1.ValueType = None
+            # Leaving empty assumes that the value type is "Feild Observation" from czo_model
+        # var1.IsRegular = None
+            # Leaving empty assumes that the IsRegular=TRUE from czo_model
+        # var1.NoDataValue = None
+            # Leaving empty assumes that the NoDataValue=-9999 from czo_model
+        # var1.VariableDescription = None
+            # At this time, we do not have a variable discription.
 
-        #Search for the meta-data on the variable parameter units
-        var1_units = wof_base.BaseUnits() # create a sigle units instance
+        # Search for the meta-data on the variable parameter units
+        var1_units = wof_base.BaseUnits()  # create a sigle units instance
         var1_units.UnitsID = row[2]
         cur.execute("""
         SELECT
@@ -394,10 +391,10 @@ class czoDao(BaseDao):
         var1_units.UnitsName = db_unit[0]
         var1_units.UnitsType = db_unit[1]
         var1_units.UnitsAbbreviation = db_unit[2]
-        var1.VariableUnits = var1_units # assign the variable units to the units instance
+        var1.VariableUnits = var1_units  # assign the variable units to the units instance
             
-        #Search for the meta-data on the variable time-support units
-        var1_TimeUnits = wof_base.BaseUnits() # create a sigle units instance
+        # Search for the meta-data on the variable time-support units
+        var1_TimeUnits = wof_base.BaseUnits()  # create a sigle units instance
         var1_TimeUnits.UnitsID = row[6]
         cur.execute("""
         SELECT
@@ -412,7 +409,7 @@ class czoDao(BaseDao):
         var1_TimeUnits.UnitsName = db_unit[0]
         var1_TimeUnits.UnitsType = db_unit[1]
         var1_TimeUnits.UnitsAbbreviation = db_unit[2]
-        var1.TimeUnits = var1_TimeUnits # assign the variable units to the units instance
+        var1.TimeUnits = var1_TimeUnits  # assign the variable units to the units instance
 
         cur.close()     # close the database cursor
         conn.close()    # close the database connection
@@ -469,7 +466,7 @@ class czoDao(BaseDao):
             return []
 
         # open database, find all of the variable codes available for this site
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()    
         cur.execute("""
         SELECT DISTINCT
@@ -505,7 +502,7 @@ class czoDao(BaseDao):
         
         if DEBUG_PRINT:
             number_data_series = len(series_list)
-            print 'Number Data Series Found at %s: %d' % (site_code,number_data_series)
+            print 'Number Data Series Found at %s: %d' % (site_code, number_data_series)
 
         return series_list
 
@@ -547,48 +544,50 @@ class czoDao(BaseDao):
                     print '>'
 
                 # open database, the right table name, and column names for the data values
-                conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+                conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
                 cur = conn.cursor()    
                 cur.execute("""
                 SELECT DISTINCT
                     Series_for_midStream.TableName,
-                    Series_for_midStream.TableColumnName
+                    Series_for_midStream.TableColumnName,
+                    Series_for_midStream.SeriesTimeZone
                 FROM Sites_for_midStream
                     RIGHT JOIN Series_for_midStream
                         RIGHT JOIN Variables_for_midStream
                         ON Variables_for_midStream.VariableID = Series_for_midStream.VariableID
                     ON Sites_for_midStream.SiteID = Series_for_midStream.SiteID
                 WHERE (Sites_for_midStream.SiteCode = %s AND Variables_for_midStream.VariableCode = %s);
-                """,(site_code,var_code))
+                """, (site_code, var_code))
         
                 row = cur.fetchone()
                 cur.close()     # close the database cursor
                 conn.close()    # close the database connection
                 
                 table_name = row[0]
-                column_name = row[1] 
-                                
-                local_time_zone = tzoffset(None, -18000) # Five hours behind UTC, in seconds
+                column_name = row[1]
+                column_tz = row[2]
+
+                local_time_zone = tzoffset(None, column_tz*3600)  # in seconds
                 
                 # Looking through tables to get start and end times
-                BDT = self.get_begin_datetime(table_name,column_name)
+                BDT = self.get_begin_datetime(table_name, column_name)
                 series.BeginDateTime = BDT.replace(tzinfo=local_time_zone)
                 series.BeginDateTimeUTC = series.BeginDateTime.astimezone(pytz.utc)
                     
-                EDT = self.get_end_datetime(table_name,column_name)
+                EDT = self.get_end_datetime(table_name, column_name)
                 series.EndDateTime = EDT.replace(tzinfo=local_time_zone)
                 series.EndDateTimeUTC = series.EndDateTime.astimezone(pytz.utc)
                 
                 if DEBUG_PRINT:
                     print 'Subquery of get_series_by_sitecode_and_varcode:'
                     print '<'
-                series.BeginDateTime = self.get_begin_datetime(table_name,column_name)
+                series.BeginDateTime = self.get_begin_datetime(table_name, column_name)
                 if DEBUG_PRINT:
                     print '>'
                 if DEBUG_PRINT:
                     print 'Subquery of get_series_by_sitecode_and_varcode:'
                     print '<'
-                series.EndDateTime = self.get_end_datetime(table_name,column_name)
+                series.EndDateTime = self.get_end_datetime(table_name, column_name)
                 if DEBUG_PRINT:
                     print '>'
                 series.BeginDateTimeUTC = '2013-01-01T05:00:00Z'
@@ -626,20 +625,20 @@ class czoDao(BaseDao):
         begin_datetime = []
 
         # open database, read the earlist time for this table/data column
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()  
         cur.execute("""
         SELECT MIN(Date)
         FROM %s
         WHERE %s != '';
-        """ % (table_name,column_name))
+        """ % (table_name, column_name))
         row = cur.fetchone()
         begin_datetime = row[0]
         cur.close()     # close the database cursor
         conn.close()    # close the database connection 
             
         if DEBUG_PRINT:
-            print "Series start date/time: %s" % (begin_datetime )      
+            print "Series start date/time: %s" % begin_datetime
         
         if not begin_datetime:
             return []
@@ -660,28 +659,27 @@ class czoDao(BaseDao):
         
         end_datetime = []
 
-         # open database, read the latest time for this table/data column
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        # open database, read the latest time for this table/data column
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()  
         cur.execute("""
         SELECT MAX(Date)
         FROM %s
         WHERE %s != '';
-        """ % (table_name,column_name))
+        """ % (table_name, column_name))
         row = cur.fetchone()
         end_datetime = row[0]
         cur.close()     # close the database cursor
         conn.close()    # close the database connection
             
         if DEBUG_PRINT:
-            print "Series start date/time: %s" % (end_datetime)
+            print "Series start date/time: %s" % end_datetime
         
         if not end_datetime:
             return []
         
         return end_datetime
   
-    
 
     def parse_date_strings(self, begin_date_time_string, end_date_time_string):
         """Returns a list with parsed datetimes in the local time zone.
@@ -696,7 +694,7 @@ class czoDao(BaseDao):
         """
 
         if DEBUG_PRINT:
-            print '*parse_date_strings: '# + begin_date_time_string + ' ' + end_date_time_string
+            print '*parse_date_strings: '  # + begin_date_time_string + ' ' + end_date_time_string
         
         # Convert input strings to datetime objects
         try:
@@ -712,14 +710,14 @@ class czoDao(BaseDao):
                 e = parse(end_date_time_string)
             else:
                 # Provide default end date at end of period of record
-                e = parse(time.strftime('%Y%m%d %H:%M:%S') + '-05') # use current tme if none specified
+                e = parse(time.strftime('%Y%m%d %H:%M:%S') + '-05')  # use current tme if none specified
         except:
             raise ValueError('invalid end date: ' + str(end_date_time_string))
 
         # If we know time zone, convert to local time.  Otherwise, assume local time.
         # Remove tzinfo in the end since datetimes from data file do not have
         # tzinfo either.  This enables date comparisons.
-        local_time_zone = tzoffset(None, -18000) # Five hours behind UTC, in seconds
+        local_time_zone = tzoffset(None, -18000)  # Five hours behind UTC, in seconds
         if b.tzinfo:
             b = b.astimezone(local_time_zone)
             b = b.replace(tzinfo=None)
@@ -750,7 +748,7 @@ class czoDao(BaseDao):
             print '*get_datavalues: ' + site_code + ' - ' + var_code
 
         # check with the database whether this site actually is tracking this variable.
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor() 
           
         cur.execute("""
@@ -763,17 +761,17 @@ class czoDao(BaseDao):
                 ON Variables_for_midStream.VariableID = Series_for_midStream.VariableID
             ON Sites_for_midStream.SiteID = Series_for_midStream.SiteID
         WHERE (Sites_for_midStream.SiteCode = %s AND Variables_for_midStream.VariableCode = %s);
-        """,(site_code,var_code))
+        """, (site_code, var_code))
      
         row = cur.fetchone()
         cur.close()
         conn.close()  
         
-        #if the query returns empty handed, return an empty list.
+        # if the query returns empty handed, return an empty list.
         if not row:
             return []
         
-        #else the query result is the table and column name of the desired variable
+        # else the query result is the table and column name of the desired variable
         table_name = row[0]
         column_name = row[1]              
         
@@ -807,8 +805,8 @@ class czoDao(BaseDao):
         parse_result = self.parse_date_strings(begin_date_time, end_date_time)
         if DEBUG_PRINT:
             print '//'
-        b = parse_result[0] # begin datetime
-        e = parse_result[1] # end datetime
+        b = parse_result[0]  # begin datetime
+        e = parse_result[1]  # end datetime
 
         if DEBUG_PRINT:  #To see how long this takes
             t1 = time.time()
@@ -817,16 +815,16 @@ class czoDao(BaseDao):
                   SELECT Date, %s
                   FROM %s
                   WHERE %s != '' AND date >= %s and date <= %s;
-                  """ % (column_name,table_name,column_name,b,e)        
+                  """ % (column_name, table_name, column_name, b, e)
    
-       # open database, read the values for this table/data column
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        # open database, read the values for this table/data column
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()  
         cur.execute("""
         SELECT Date, %s
         FROM %s
         WHERE %s != '' AND date >= '%s' and date <= '%s';
-        """ % (column_name,table_name,column_name,b,e))
+        """ % (column_name, table_name, column_name ,b, e))
         table = cur.fetchall()
         cur.close()     # close the database cursor
         conn.close()    # close the database connection
@@ -835,9 +833,9 @@ class czoDao(BaseDao):
             datavalue = czo_model.DataValue()
             datavalue.DataValue = row[1]
             LocalDateTime_noUTC = row[0]
-            local_time_zone = tzoffset(None, -18000) # Five hours behind UTC, in seconds
+            local_time_zone = tzoffset(None, -18000)  # Five hours behind UTC, in seconds
             datavalue.LocalDateTime = LocalDateTime_noUTC.replace(tzinfo=local_time_zone)
-            datavalue.MethodID = varResult.MethodID # MethodID was not originally part of datavalue object
+            datavalue.MethodID = varResult.MethodID  # MethodID was not originally part of datavalue object
             valueResultArr.append(datavalue)            
                     
         if DEBUG_PRINT:        
@@ -862,7 +860,7 @@ class czoDao(BaseDao):
         methods = [] 
 
         # Open a connection to the database
-        conn=pymysql.connect(host=dbhost,db=dbname,user=dbuser,passwd=dbpswd)
+        conn = pymysql.connect(host=dbhost, db=dbname, user=dbuser, passwd=dbpswd)
         cur = conn.cursor()    
 
         for method_id in method_id_arr:
@@ -880,7 +878,7 @@ class czoDao(BaseDao):
                 method = czo_model.Method()
                 method.MethodID = method_id
                 method.MethodDescription = row[2]
-                methods.append(method) # TODO: Does this need to be copy.deepcopy(method)
+                methods.append(method)  # TODO: Does this need to be copy.deepcopy(method)
     
         cur.close()     # close the database cursor
         conn.close()    # close the database connection
@@ -900,7 +898,7 @@ class czoDao(BaseDao):
             
         sources = []
         source = czo_model.Source()
-        sources.append(source) # append the source to list of sources
+        sources.append(source)  # append the source to list of sources
         return sources
 
     def get_qualifiers_by_ids(self, qualifier_id_arr):

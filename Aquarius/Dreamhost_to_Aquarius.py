@@ -23,8 +23,8 @@ __author__ = 'Sara Geleskie Damiano'
 __contact__ = 'sdamiano@stroudcenter.org'
 
 # Set up initial parameters - these are rewritten when run from the command prompt.
-past_hours_to_append = 366  # Sets number of hours in the past to append, use None for all time
-table = None  # Selects a single table to append from, often a logger number, use None for all loggers
+past_hours_to_append = None  # Sets number of hours in the past to append, use None for all time
+table = "SL043"  # Selects a single table to append from, often a logger number, use None for all loggers
 column = None  # Selects a single column to append from, often a variable code, use None for all columns
 
 
@@ -55,7 +55,6 @@ else:
 # Deal with timezones...
 eastern_standard_time = pytz.timezone('Etc/GMT+5')
 eastern_local_time = pytz.timezone('US/Eastern')
-costa_rica_time = pytz.timezone('Etc/GMT+6')
 
 
 def start_log():
@@ -164,11 +163,16 @@ if Log_to_file:
 
 # Looping through each time series and appending the data
 i = 1
-for ts_numeric_id, table_name, table_column_name, series_start, series_end in AqSeries:
+for ts_numeric_id, table_name, table_column_name, series_tz, series_start, series_end in AqSeries:
     check_valid_connection()
     if debug:
         print "Attempting to append series %s of %s" % (i, len(AqSeries))
         print "Data being appended to Time Series # %s" % ts_numeric_id
+
+    aq_series_timezone = aq.get_aquarius_timezone(ts_numeric_id)
+    if debug:
+        print "Time Zone of Series on Dreamhost is %s" % series_tz
+        print "Time Zone of Series in Aquarius is %s" % aq_series_timezone
 
     if past_hours_to_append is None:
         query_start = None
@@ -176,44 +180,21 @@ for ts_numeric_id, table_name, table_column_name, series_start, series_end in Aq
         if table_name in ["davis", "CRDavis"]:
             query_start = query_start_utc.astimezone(pytz.utc)
         else:
-            query_start = query_start_utc.astimezone(eastern_standard_time)
+            query_start = query_start_utc.astimezone(series_tz)
 
     data_table = aq.get_data_from_dreamhost_table(table_name, table_column_name,
                                                   series_start, series_end,
                                                   query_start=query_start, query_end=None,
                                                   debug=debug)
 
-    # if len(data_table) > 10000:
-    #     grouped = data_table.groupby(np.arange(len(data_table))//7500)
-    #
-    #     j = 1
-    #     for name, group in grouped:
-    #         if debug:
-    #             print "Appending chunk # %s of %s with %s values beginning on %s" % \
-    #                   (j, len(grouped), len(group), group.index.get_value(group.index, 0))
-    #         k = i + j/100
-    #         append_bytes = aq.create_appendable_csv(group)
-    #         AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
-    #         if Log_to_file:
-    #             text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
-    #                             % (k, table_name, table_column_name,
-    #                                ts_numeric_id, AppendResult.TsIdentifier,
-    #                                AppendResult.NumPointsAppended, AppendResult.AppendToken))
-    #         time.sleep(325)
-    #         j += 1
-    #
-    # else:
-    #     if debug:
-    #         print "Appending in a single call to the API"
-
     append_bytes = aq.create_appendable_csv(data_table)
-    AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
+    # AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
     # TODO: stop execution of further requests after an error.
-    if Log_to_file:
-        text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
-                        % (i, table_name, table_column_name,
-                           ts_numeric_id, AppendResult.TsIdentifier,
-                           AppendResult.NumPointsAppended, AppendResult.AppendToken))
+    # if Log_to_file:
+    #     text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
+    #                     % (i, table_name, table_column_name,
+    #                        ts_numeric_id, AppendResult.TsIdentifier,
+    #                        AppendResult.NumPointsAppended, AppendResult.AppendToken))
     # time.sleep(1)
 
     i += 1

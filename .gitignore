@@ -13,3 +13,4 @@ SWRCSensors/SWRCSensors/keys.py
 *.ffs_db
 sync.ffs_db
 dbinfo.py
+Aquarius/wintab32dll.txt

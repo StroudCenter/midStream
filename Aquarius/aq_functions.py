@@ -16,7 +16,6 @@ import pytz
 import base64
 import sys
 import socket
-import urllib2
 import numpy as np
 
 # Bring in all of the database connection information.
@@ -106,7 +105,8 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
 
     # Look for Dataseries that have an associated Aquarius Time Series ID
     query_text = \
-        "SELECT DISTINCT AQTimeSeriesID, TableName, TableColumnName, DateTimeSeriesStart, DateTimeSeriesEnd " \
+        "SELECT DISTINCT AQTimeSeriesID, TableName, TableColumnName, SeriesTimeZone," \
+        " DateTimeSeriesStart, DateTimeSeriesEnd " \
         " FROM Series_for_midStream " \
         " WHERE AQTimeSeriesID != 0 " + str1 + str2 + str3 + \
         " ORDER BY TableName, AQTimeSeriesID ;"
@@ -125,10 +125,19 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
     aq_series_list = [list(series) for series in aq_series]
 
     for series in aq_series_list:
+        # Turn the time zone for the series into a pytz timezone
         if series[3] is not None:
-            series[3] = pytz.timezone('Etc/GMT+5').localize(series[3])
+            utc_offset_string = '{:+3.0f}'.format(series[3]*-1).strip()
+            timezone = pytz.timezone('Etc/GMT'+utc_offset_string)
+            series[3] = timezone
+        else:
+            series[3] = pytz.timezone('Etc/GMT+5')
+        # Make the series start and end times "timezone-aware"
+        # Per the database instructions, these times should always be in EST, regardless of the timezone of the logger.
         if series[4] is not None:
             series[4] = pytz.timezone('Etc/GMT+5').localize(series[4])
+        if series[5] is not None:
+            series[5] = pytz.timezone('Etc/GMT+5').localize(series[5])
     if debug:
         # print aq_series_list
         # print type(aq_series)
@@ -169,7 +178,7 @@ def convert_python_time_to_rtc(pydatetime, timezone):
     sec_from_rtc_epoch = unix_time - 946684800
     return sec_from_rtc_epoch
 
-
+# TODO: Reduce the number of API pings this takes.  Maybe add the locationId to the SQL?
 def get_aquarius_timezone(ts_numeric_id, cookie=load_cookie):
     # Call up the Aquarius Acquisition SOAP API
     client = suds.client.Client(aq_acquisition_url, timeout=325)
@@ -221,6 +230,7 @@ def get_data_from_dreamhost_table(table, column, series_start=None, series_end=N
     # Creating the query text here because the character masking works oddly
     # in the cur.execute function.
 
+    # TODO: Take into account time zones from the dreamhost table.
     if table in ["davis", "CRDavis"]:
         # The meteobridges streaming this data stream a column of time in UTC
         dt_col = "mbutcdatetime"
@@ -264,6 +274,8 @@ def get_data_from_dreamhost_table(table, column, series_start=None, series_end=N
             values_table['timestamp'] = values_table[dt_col]
             values_table.set_index(['timestamp'], inplace=True)
             values_table.drop(dt_col, axis=1, inplace=True)
+            # NOTE:  The data going into Aquarius MUST already be in the same timezone as that series is in Aquarius
+            # TODO: Fix timezones
             values_table.index = values_table.index.tz_localize('UTC')
             if table == "davis":
                 values_table.index = values_table.index.tz_convert(pytz.timezone('Etc/GMT+5'))
