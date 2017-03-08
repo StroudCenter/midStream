@@ -137,6 +137,8 @@ full_df.sort_values(by=['TimeSeriesID', 'TypeName', 'DateApplied', 'DateModified
 full_df.fillna(value=-9999, inplace=True)
 if debug:
     print "There are %s Total Metadata Records" % len(full_df)
+if Log_to_file:
+    text_file.write("There are %s Total Metadata Records\n" % len(full_df))
 
 # These are columns that are unique for every meta-data row
 unique_cols = ['MetaID', 'XmlBlob', 'blob_dict', 'AQMetadataID', 'StartTime', 'startTime', 'startTime_dt',
@@ -158,7 +160,7 @@ aggregates = pd.DataFrame({'count': full_df_grouped.size(),
 
 dedupped_aggr = pd.merge(dedupped, aggregates, on=non_unique_cols)
 values_to_update = dedupped_aggr[(dedupped_aggr['StartTime'] != dedupped_aggr['min_start']) |
-                                 (dedupped_aggr['EndTime'] != dedupped_aggr['max_end']) ].reset_index(drop=True)
+                                 (dedupped_aggr['EndTime'] != dedupped_aggr['max_end'])].reset_index(drop=True)
 
 if len(values_to_update) > 0:
 
@@ -186,11 +188,17 @@ if len(values_to_update) > 0:
     
     if debug:
         print "Updating %s Records" % len(values_to_update)
+    if Log_to_file:
+        text_file.write("Updating %s Records\n" % len(values_to_update))
     update_group = values_to_update.groupby(['TimeSeriesID'])
     for name, group in update_group:
         if len(group) > 0:
             if debug:
-                print "    Updating %s Records From TimeSeries # %s (%s)" % (len(group), name, group['TS_Text_ID'].iloc[0])
+                print "    Updating %s Records From TimeSeries # %s (%s)"\
+                      % (len(group), name, group['TS_Text_ID'].iloc[0])
+            if Log_to_file:
+                text_file.write("    Updating %s Records From TimeSeries # %s (%s)\n"
+                                % (len(group), name, group['TS_Text_ID'].iloc[0]))
             for index, row in group.iterrows():
                 sql_update = """UPDATE TimeSeriesMeta
                                 SET StartTime='%s',
@@ -204,7 +212,8 @@ if len(values_to_update) > 0:
 else:    
     if debug:
         print "No Records to Update"
-
+    if Log_to_file:
+        text_file.write("No Records to Update\n")
 
 
 # Remove Duplicates from the SQL
@@ -212,6 +221,8 @@ dups = full_df[full_df.duplicated(subset=non_unique_cols, keep='last')]
 if len(dups) > 0:
     if debug:
         print "Deleting %s Duplicated Records" % len(dups)
+    if Log_to_file:
+        text_file.write("Deleting %s Duplicated Records\n" % len(dups))
     # Doing by Group to help avoid overly massive delete statements
     dups_group = dups.groupby(['TimeSeriesID', 'TypeName'])
     for name, group in dups_group:
@@ -220,15 +231,24 @@ if len(dups) > 0:
                 meta_to_delete_str = str(list(group['MetaID'].values)).replace('UUID(', '').replace(')', '').strip('[]')
                 sql_delete = 'DELETE FROM TimeSeriesMeta WHERE MetaID IN ({0})'.format(meta_to_delete_str)
                 if debug:
-                    print "    Deleting %s Duplicate Records From TimeSeries # %s (%s)" % (len(group), name, group['TS_Text_ID'].iloc[0])
+                    print "    Deleting %s Duplicate Records From TimeSeries # %s (%s)"\
+                          % (len(group), name, group['TS_Text_ID'].iloc[0])
+                if Log_to_file:
+                    text_file.write("    Deleting %s Duplicate Records From TimeSeries # %s (%s)\n"
+                                    % (len(group), name, group['TS_Text_ID'].iloc[0]))
                 cur.execute(sql_delete)
                 conn.commit()
             except:
                 if debug:
                     print "    Delete Failed For TimeSeries # %s (%s)" % (name, group['TS_Text_ID'].iloc[0])
+                if Log_to_file:
+                    text_file.write("    Delete Failed For TimeSeries # %s (%s)\n"
+                                    % (name, group['TS_Text_ID'].iloc[0]))
 else:
     if debug:
         print "No Duplicate Records to Delete"
+    if Log_to_file:
+        text_file.write("No Duplicate Records to Delete\n")
     
     
 # Remove junk notes
@@ -237,6 +257,8 @@ junk_note_df = full_df[(full_df['TypeName'] == 'NOTE') & (full_df['comment'].isi
 if len(junk_note_df) > 0:
     if debug:
         print "Deleting %s Junk Notes" % len(junk_note_df)
+    if Log_to_file:
+        text_file.write("Deleting %s Junk Notes\n" % len(junk_note_df))
     # Doing by Group to help avoid overly massive delete statements
     junk_note_group = junk_note_df.groupby(['TimeSeriesID'])
     for name, group in junk_note_group:
@@ -244,18 +266,24 @@ if len(junk_note_df) > 0:
             meta_to_delete_str = str(list(group['MetaID'].values)).replace('UUID(', '').replace(')', '').strip('[]')
             sql_delete = 'DELETE FROM TimeSeriesMeta WHERE MetaID IN ({0})'.format(meta_to_delete_str)
             if debug:
-                print "    Deleting %s Junk Notes From TimeSeries # %s (%s)" % (len(group), name, group['TS_Text_ID'].iloc[0])
+                print "    Deleting %s Junk Notes From TimeSeries # %s (%s)"\
+                      % (len(group), name, group['TS_Text_ID'].iloc[0])
+
+            if Log_to_file:
+                text_file.write("    Deleting %s Junk Notes From TimeSeries # %s (%s)\n"
+                                % (len(group), name, group['TS_Text_ID'].iloc[0]))
             cur.execute(sql_delete)
             conn.commit()
 else:
     if debug:
         print "No Junk Notes to Delete"
+    if Log_to_file:
+        text_file.write("No Junk Notes to Delete\n")
         
 
 # Close out the database connections
 cur.close()  # close the database cursor
 conn.close()  # close the database connection
-
 
 
 # Print out what happened
@@ -264,14 +292,16 @@ by_ts_unique = pd.DataFrame({'unique_meta': dedupped_aggr.groupby(['TimeSeriesID
 by_ts_dups = pd.DataFrame({'deleted_dups': dups.groupby(['TimeSeriesID']).size()})
 by_ts_junk = pd.DataFrame({'deleted_junk': junk_note_df.groupby(['TimeSeriesID']).size()})
 by_ts_updated = pd.DataFrame({'updated_meta': values_to_update.groupby(['TimeSeriesID']).size()})
-by_ts_counts = pd.concat([by_ts_full, by_ts_unique, by_ts_dups, by_ts_junk, by_ts_updated], axis=1).merge(ts_df[['TimeSeriesID', 'TS_Text_ID']], left_index=True, right_on='TimeSeriesID').fillna(0)
+by_ts_counts = pd.concat([by_ts_full, by_ts_unique, by_ts_dups, by_ts_junk, by_ts_updated], axis=1).merge(
+    ts_df[['TimeSeriesID', 'TS_Text_ID']], left_index=True, right_on='TimeSeriesID').fillna(0)
 if Log_to_file:
-    text_file.write("NumericIdentifier, TextIdentifier, TotalMetadata, UniqueMetadata, DeletedDeplicates, DeletedJunk, UpdatedRecords  \n")
+    text_file.write("NumericIdentifier, TextIdentifier, TotalMetadata, UniqueMetadata,"
+                    " DeletedDeplicates, DeletedJunk, UpdatedRecords  \n")
 for index, row in by_ts_counts.iterrows():
     if Log_to_file:
         text_file.write("%s, %s, %s, %s, %s, %s, %s  \n" %
-                        (row['TimeSeriesID'], row['TS_Text_ID'], row['total_meta'], row['unique_meta'], row['deleted_dups'], row['deleted_junk'],row['updated_meta']))
-
+                        (row['TimeSeriesID'], row['TS_Text_ID'], row['total_meta'], row['unique_meta'],
+                         row['deleted_dups'], row['deleted_junk'], row['updated_meta']))
 
 
 # Find the date/time the script finished:
