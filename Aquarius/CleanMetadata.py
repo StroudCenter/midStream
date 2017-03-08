@@ -74,6 +74,8 @@ else:
 # Set up the connection directly to the Aquarius SQL Database
 conn = pymssql.connect(server=aqdb_host, user=aqdb_user, password=aqdb_password, database=aqdb_name)
 cur = conn.cursor()
+if debug:
+    print "Connected to server."
 
 # Set a where clause for the SQL query
 # where_clause = """
@@ -105,18 +107,30 @@ ON ts.AQParentID_ = Location.LocationID
 LEFT JOIN parameter 
 ON ts.parameterType_ = parameter.parameterid
 """
+if debug:
+    print "Reading TimeSeries information into pandas"
+    print ts_df_query
 ts_df = pd.read_sql(ts_df_query, conn)
 ts_df['TS_Text_ID'] = ts_df['Parameter'] + '.' + ts_df['TS_label'] + '@' + ts_df['LocationCode']
+
+
 # Read the metadata table into pandas
+if debug:
+    print "Reading the metadata table into pandas using query:"
+    print "SELECT * FROM TimeSeriesMeta" + where_clause
 meta_df = pd.read_sql("SELECT * FROM TimeSeriesMeta" + where_clause, conn)
 
 # Expand the XML "Blob" of sub-meta-data into columns of its own.
+if debug:
+    print 'Expanding the XML "Blobs"'
 meta_df['blob_dict'] = meta_df['XmlBlob'].apply(lambda x: ET.fromstring(x).attrib)
 meta_expand = pd.concat([meta_df, pd.DataFrame((d for idx, d in meta_df['blob_dict'].iteritems()))], axis=1)
 full_df = meta_expand.merge(ts_df, on='TimeSeriesID')
 oneblob = ET.fromstring(meta_df.loc[1, 'XmlBlob'])
 
 # Clean up Data Types
+if debug:
+    print 'Cleaning up Data Types'
 if full_df['StartTime'].dtype == np.dtype('datetime64[ns]'):
     full_df['startTime_dt'] = pd.to_datetime(full_df['startTime'], errors='ignore', format='%Y-%m-%d %H:%M:%S.%f')
 else:
@@ -133,6 +147,8 @@ if 'modifiedPoints' in full_df.columns:
     full_df['modifiedPoints'] = pd.to_numeric(full_df['modifiedPoints'])
 
 # Sort the list
+if debug:
+    print 'Sorting'
 full_df.sort_values(by=['TimeSeriesID', 'TypeName', 'DateApplied', 'DateModified'], inplace=True)
 full_df.fillna(value=-9999, inplace=True)
 if debug:
@@ -149,6 +165,8 @@ for item in unique_cols:
 
 
 # Update metadata for ranges that changed
+if debug:
+    print 'De-dupp-ing and aggregating'
 dedupped = full_df.drop_duplicates(subset=non_unique_cols, keep='last')
 
 full_df_grouped = full_df.groupby(non_unique_cols)
@@ -162,8 +180,12 @@ dedupped_aggr = pd.merge(dedupped, aggregates, on=non_unique_cols)
 values_to_update = dedupped_aggr[(dedupped_aggr['StartTime'] != dedupped_aggr['min_start']) |
                                  (dedupped_aggr['EndTime'] != dedupped_aggr['max_end'])].reset_index(drop=True)
 
+# Want to update the ranges of metadata because when data is appended and holes are filled in, it splits the metadata
+# into two separate records around the hole.  This reconnects those records, but it also deletes the information about
+# which files each point came from.
 if len(values_to_update) > 0:
 
+    # Set the minimum time for all the records to the minimum time for the group
     if values_to_update['min_start'].dtype == np.dtype('datetime64[ns]'):
         values_to_update['min_start_str'] = values_to_update['min_start'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
     else:
@@ -174,7 +196,8 @@ if len(values_to_update) > 0:
         to_replace='(startTime="[0-9-]{10}\s[0-:."]{13})',
         value='startTime="'+values_to_update['min_start_str']+'"',
         regex=True)
-    
+
+    # Set the maximum time for all the records to the maximum time for the group
     if values_to_update['max_end'].dtype == np.dtype('datetime64[ns]'):
         values_to_update['max_end_str'] = values_to_update['max_end'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
     else:
@@ -184,6 +207,12 @@ if len(values_to_update) > 0:
     values_to_update['new_blob2'] = values_to_update['new_blob'].replace(
         to_replace='(endTime="[0-9-]{10}\s[0-:."]{13})',
         value='endTime="'+values_to_update['max_end_str']+'"',
+        regex=True)
+
+    # Escape any single quotes
+    values_to_update['new_blob3'] = values_to_update['new_blob2'].replace(
+        to_replace="'",
+        value="''",
         regex=True)
     
     if debug:
@@ -206,7 +235,9 @@ if len(values_to_update) > 0:
                                 XmlBlob=CONVERT(VARBINARY(max), '%s')
                                 WHERE MetaID='%s';
                                 """ % \
-                      (row['min_start_str'], row['max_end_str'], row['new_blob2'], str(row['MetaID']))
+                      (row['min_start_str'], row['max_end_str'], row['new_blob3'], str(row['MetaID']))
+                if debug:
+                    print "        Using Query: %s" % sql_update
                 cur.execute(sql_update)
             conn.commit()
 else:    
@@ -233,6 +264,7 @@ if len(dups) > 0:
                 if debug:
                     print "    Deleting %s Duplicate Records From TimeSeries # %s (%s)"\
                           % (len(group), name, group['TS_Text_ID'].iloc[0])
+                    print "        Using Query: %s" % sql_delete
                 if Log_to_file:
                     text_file.write("    Deleting %s Duplicate Records From TimeSeries # %s (%s)\n"
                                     % (len(group), name, group['TS_Text_ID'].iloc[0]))
@@ -268,6 +300,7 @@ if len(junk_note_df) > 0:
             if debug:
                 print "    Deleting %s Junk Notes From TimeSeries # %s (%s)"\
                       % (len(group), name, group['TS_Text_ID'].iloc[0])
+                print "        Using Query: %s" % sql_delete
 
             if Log_to_file:
                 text_file.write("    Deleting %s Junk Notes From TimeSeries # %s (%s)\n"

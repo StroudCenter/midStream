@@ -34,7 +34,7 @@ script_name_with_path = os.path.realpath(__file__)
 script_directory = os.path.dirname(os.path.realpath(__file__))
 
 # Set up a parser for command line options
-parser = argparse.ArgumentParser(description='This script appends data from Dreamhost to Aquarius.')
+parser = argparse.ArgumentParser(description='This script cleans the Aquarius append log.')
 parser.add_argument('--debug', action='store_true',
                     help='Turn debugging on')
 parser.add_argument('--nolog', action='store_false',
@@ -84,9 +84,9 @@ def get_event_log_length():
     when this table becomes too long, the whole system bogs down.
     """
     conn_f = pymssql.connect(server=aqdb_host, user=aqdb_user, password=aqdb_password, database=aqdb_name)
-    cur_f = conn.cursor()
+    cur_f = conn_f.cursor()
 
-    cur.execute("""
+    cur_f.execute("""
         SELECT
             COUNT(*)
         FROM
