@@ -23,8 +23,12 @@ __author__ = 'Sara Geleskie Damiano'
 __contact__ = 'sdamiano@stroudcenter.org'
 
 # Set up initial parameters - these are rewritten when run from the command prompt.
-past_hours_to_append = None  # Sets number of hours in the past to append, use None for all time
-table = "SL043"  # Selects a single table to append from, often a logger number, use None for all loggers
+past_hours_to_append = None  # Sets number of hours in the past to append.  Use None for all time
+append_start = None  # Sets start time for the append **in EST**, use None for all time
+append_end = None  # Sets end time for the append **in EST**, use None for all time
+# append_start = "2017-04-01 00:00:00"  # Sets start time for the append **in EST**, use None for all time
+# append_end = "2017-05-01 00:00:00"  # Sets end time for the append **in EST**, use None for all time
+table = "SL042"  # Selects a single table to append from, often a logger number, use None for all loggers
 column = None  # Selects a single column to append from, often a variable code, use None for all columns
 
 
@@ -46,6 +50,8 @@ if sys.stdin.isatty():
     debug = parser.parse_args().debug
     Log_to_file = parser.parse_args().nolog
     past_hours_to_append = parser.parse_args().hours
+    append_start = None
+    append_end = None
     table = parser.parse_args().table
     column = parser.parse_args().col
 else:
@@ -145,16 +151,26 @@ check_valid_connection()
 
 
 # Set the time cutoff for recent series.
-if past_hours_to_append is None:
-    current_timeseries_cutoff_est = None
+if append_start is None:
+    append_start_dt = None
 else:
-    current_timeseries_cutoff_utc = start_datetime_utc - datetime.timedelta(hours=past_hours_to_append*2)
-    current_timeseries_cutoff_est = current_timeseries_cutoff_utc.astimezone(eastern_standard_time)
-    query_start_utc = start_datetime_utc - datetime.timedelta(hours=past_hours_to_append)
+    append_start_dt_naive = datetime.datetime.strptime(append_start,"%Y-%m-%d %H:%M:%S")
+    append_start_dt = append_start_dt_naive.replace(tzinfo=eastern_standard_time)
+
+if append_end is None:
+    append_end_dt = None
+else:
+    append_end_dt_naive = datetime.datetime.strptime(append_end,"%Y-%m-%d %H:%M:%S")
+    append_end_dt = append_end_dt_naive.replace(tzinfo=eastern_standard_time)
+
+if append_start is None and append_end is None and past_hours_to_append is not None:
+    append_end_dt = None
+    append_start_utc = start_datetime_utc - datetime.timedelta(hours=past_hours_to_append+1)
+    append_start_dt = append_start_utc.astimezone(eastern_standard_time)
 
 
 # Get data for all series that are available
-AqSeries = aq.get_dreamhost_series(cutoff_for_recent=current_timeseries_cutoff_est,
+AqSeries = aq.get_dreamhost_series(query_start=append_start_dt, query_end=append_end_dt,
                                    table=table, column=column, debug=debug)
 if Log_to_file:
     text_file.write("%s series found with corresponding time series in Aquarius \n \n" % (len(AqSeries)))
@@ -163,39 +179,48 @@ if Log_to_file:
 
 # Looping through each time series and appending the data
 i = 1
-for ts_numeric_id, table_name, table_column_name, series_tz, series_start, series_end in AqSeries:
+for ts_numeric_id, loc_numeric_id, table_name, table_column_name, series_tz, series_start, series_end in AqSeries:
+    if debug:  # Some blank lines to differentiate the new dataset
+        print ""
+        print ""
     check_valid_connection()
     if debug:
         print "Attempting to append series %s of %s" % (i, len(AqSeries))
         print "Data being appended to Time Series # %s" % ts_numeric_id
 
-    aq_series_timezone = aq.get_aquarius_timezone(ts_numeric_id)
+    aq_series_timezone = aq.get_aquarius_timezone(ts_numeric_id, loc_numeric_id)
     if debug:
         print "Time Zone of Series on Dreamhost is %s" % series_tz
         print "Time Zone of Series in Aquarius is %s" % aq_series_timezone
 
-    if past_hours_to_append is None:
+    if append_start_dt is None:
         query_start = None
+    elif table_name in ["davis", "CRDavis"]:
+        query_start = append_start_dt.astimezone(pytz.utc)
     else:
-        if table_name in ["davis", "CRDavis"]:
-            query_start = query_start_utc.astimezone(pytz.utc)
-        else:
-            query_start = query_start_utc.astimezone(series_tz)
+        query_start = append_start_dt.astimezone(series_tz)
+
+    if append_end_dt is None:
+        query_end = None
+    elif table_name in ["davis", "CRDavis"]:
+        query_end = append_end_dt.astimezone(pytz.utc)
+    else:
+        query_end = append_end_dt.astimezone(series_tz)
 
     data_table = aq.get_data_from_dreamhost_table(table_name, table_column_name,
                                                   series_start, series_end,
-                                                  query_start=query_start, query_end=None,
+                                                  query_start=query_start, query_end=query_end,
                                                   debug=debug)
 
     append_bytes = aq.create_appendable_csv(data_table)
-    # AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
+    AppendResult = aq.aq_timeseries_append(ts_numeric_id, append_bytes, debug=debug)
     # TODO: stop execution of further requests after an error.
-    # if Log_to_file:
-    #     text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
-    #                     % (i, table_name, table_column_name,
-    #                        ts_numeric_id, AppendResult.TsIdentifier,
-    #                        AppendResult.NumPointsAppended, AppendResult.AppendToken))
-    # time.sleep(1)
+    if Log_to_file:
+        text_file.write("%s, %s, %s, %s, %s, %s, %s \n"
+                        % (i, table_name, table_column_name,
+                           ts_numeric_id, AppendResult.TsIdentifier,
+                           AppendResult.NumPointsAppended, AppendResult.AppendToken))
+    time.sleep(1)
 
     i += 1
 

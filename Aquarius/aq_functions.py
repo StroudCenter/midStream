@@ -36,7 +36,7 @@ def get_aq_auth_token(username, password, debug=False):
     # Call up the Aquarius Aquisition SOAP API
 
     try:
-        client = suds.client.Client(aq_acquisition_url, timeout=15)
+        client = suds.client.Client(aq_acquisition_url, timeout=30)
     except Exception, e:
         if debug:
             print "Error Getting Token: %s" % sys.exc_info()[0]
@@ -58,13 +58,15 @@ def get_aq_auth_token(username, password, debug=False):
                 print "Authentication Token: %s" % auth_token
                 print "Session Cookie %s" % cookie
             return auth_token, cookie
+
+
 load_auth_token, load_cookie = get_aq_auth_token(aq_username, aq_password)
 
 
 def check_aq_connection(cookie=load_cookie):
     # Call up the Aquarius Acquisition SOAP API
     try:
-        client = suds.client.Client(aq_acquisition_url, timeout=15)
+        client = suds.client.Client(aq_acquisition_url, timeout=30)
         client.options.transport.cookiejar = cookie
     except Exception, e:
         is_valid = False
@@ -78,7 +80,7 @@ def check_aq_connection(cookie=load_cookie):
     return is_valid, e
 
 
-def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=False):
+def get_dreamhost_series(query_start=None, query_end=None, table=None, column=None, debug=False):
     """
     Gets a list of all the series to append data to
     :arguments:
@@ -94,21 +96,26 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
     str1 = ""
     str2 = ""
     str3 = ""
-    if cutoff_for_recent is not None:
-        str1 = " AND (DateTimeSeriesEnd is NULL OR DateTimeSeriesEnd > '" \
-            + str(cutoff_for_recent.strftime("%Y-%m-%d %H:%M:%S")) \
+    str4 = ""
+    if query_start is not None:
+        str1 = " AND (DateTimeSeriesStart is NULL OR DateTimeSeriesStart < '" \
+            + str(query_start.strftime("%Y-%m-%d %H:%M:%S")) \
+            + "')"
+    if query_end is not None:
+        str2 = " AND (DateTimeSeriesEnd is NULL OR DateTimeSeriesEnd > '" \
+            + str(query_end.strftime("%Y-%m-%d %H:%M:%S")) \
             + "')"
     if table is not None:
-        str2 = " AND TableName = '" + table + "' "
+        str3 = " AND TableName = '" + table + "' "
     if column is not None:
-        str3 = " AND TableColumnName = '" + column + "' "
+        str4 = " AND TableColumnName = '" + column + "' "
 
     # Look for Dataseries that have an associated Aquarius Time Series ID
     query_text = \
-        "SELECT DISTINCT AQTimeSeriesID, TableName, TableColumnName, SeriesTimeZone," \
+        "SELECT DISTINCT AQTimeSeriesID, AQLocationID, TableName, TableColumnName, SeriesTimeZone," \
         " DateTimeSeriesStart, DateTimeSeriesEnd " \
         " FROM Series_for_midStream " \
-        " WHERE AQTimeSeriesID != 0 " + str1 + str2 + str3 + \
+        " WHERE AQTimeSeriesID != 0 " + str1 + str2 + str3 + str4 + \
         " ORDER BY TableName, AQTimeSeriesID ;"
 
     if debug:
@@ -126,18 +133,18 @@ def get_dreamhost_series(cutoff_for_recent=None, table=None, column=None, debug=
 
     for series in aq_series_list:
         # Turn the time zone for the series into a pytz timezone
-        if series[3] is not None:
-            utc_offset_string = '{:+3.0f}'.format(series[3]*-1).strip()
+        if series[4] is not None:
+            utc_offset_string = '{:+3.0f}'.format(series[4]*-1).strip()
             timezone = pytz.timezone('Etc/GMT'+utc_offset_string)
-            series[3] = timezone
+            series[4] = timezone
         else:
-            series[3] = pytz.timezone('Etc/GMT+5')
+            series[4] = pytz.timezone('Etc/GMT+5')
         # Make the series start and end times "timezone-aware"
         # Per the database instructions, these times should always be in EST, regardless of the timezone of the logger.
-        if series[4] is not None:
-            series[4] = pytz.timezone('Etc/GMT+5').localize(series[4])
         if series[5] is not None:
             series[5] = pytz.timezone('Etc/GMT+5').localize(series[5])
+        if series[6] is not None:
+            series[6] = pytz.timezone('Etc/GMT+5').localize(series[6])
     if debug:
         # print aq_series_list
         # print type(aq_series)
@@ -178,13 +185,18 @@ def convert_python_time_to_rtc(pydatetime, timezone):
     sec_from_rtc_epoch = unix_time - 946684800
     return sec_from_rtc_epoch
 
-# TODO: Reduce the number of API pings this takes.  Maybe add the locationId to the SQL?
-def get_aquarius_timezone(ts_numeric_id, cookie=load_cookie):
+
+def get_aquarius_timezone(ts_numeric_id, loc_numeric_id=None, cookie=load_cookie):
     # Call up the Aquarius Acquisition SOAP API
-    client = suds.client.Client(aq_acquisition_url, timeout=325)
+    client = suds.client.Client(aq_acquisition_url, timeout=30)
     client.options.transport.cookiejar = cookie
 
-    all_locations = client.service.GetAllLocations().LocationDTO
+    if loc_numeric_id is None:
+        all_locations = client.service.GetAllLocations().LocationDTO
+    else:
+        all_locations = []
+        locdto = client.service.GetLocation(loc_numeric_id)
+        all_locations.append(locdto)
     for location in all_locations:
         utc_offset_float = location.UtcOffset
         utc_offset_string = '{:+3.0f}'.format(utc_offset_float*-1).strip()
@@ -290,9 +302,7 @@ def get_data_from_dreamhost_table(table, column, series_start=None, series_end=N
             values_table.index = values_table.index.tz_convert(pytz.timezone('Etc/GMT+5'))
 
         if debug:
-            print "The first and last rows to append:"
-            print values_table.head(1)
-            print values_table.tail(1)
+            print "The first and last rows to append:", values_table.head(1), values_table.tail(1)
 
     return values_table
 
@@ -343,7 +353,7 @@ def aq_timeseries_append(ts_numeric_id, appendbytes, cookie=load_cookie, debug=F
     """
 
     # Call up the Aquarius Acquisition SOAP API
-    client = suds.client.Client(aq_acquisition_url, timeout=325)
+    client = suds.client.Client(aq_acquisition_url, timeout=1500)
     client.options.transport.cookiejar = cookie
     empty_result = client.factory.create('ns0:AppendResult')
 
@@ -377,6 +387,7 @@ def aq_timeseries_append(ts_numeric_id, appendbytes, cookie=load_cookie, debug=F
                     print append_result
                     t4 = datetime.datetime.now()
                     print "      API execution took %s" % (t4 - t3)
+                    print "SUCCESS!"
                 break
         else:
             if debug:

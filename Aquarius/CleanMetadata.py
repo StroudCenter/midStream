@@ -44,6 +44,7 @@ parser.add_argument('--debug', action='store_true',
                     help='Turn debugging on')
 parser.add_argument('--nolog', action='store_false',
                     help='Turn logging off')
+
 # Read the command line options, if run from the command line
 if sys.stdin.isatty():
     debug = parser.parse_args().debug
@@ -74,10 +75,12 @@ else:
 # Set up the connection directly to the Aquarius SQL Database
 conn = pymssql.connect(server=aqdb_host, user=aqdb_user, password=aqdb_password, database=aqdb_name)
 cur = conn.cursor()
+
 if debug:
     print "Connected to server."
 
 # Set a where clause for the SQL query
+
 # where_clause = """
 # WHERE
 # TimeSeriesID in (SELECT
@@ -86,12 +89,14 @@ if debug:
 # WHERE AQParentID_ = (SELECT
 # LocationID
 # FROM Location
-# WHERE Identifier = 'LGTUpstream'))
+# WHERE Identifier = 'Well042'))
 # """
-# # where_clause = """
+
+# where_clause = """
 # WHERE
-# TimeSeriesID = 9129758
+# TimeSeriesID = 24696758
 # """
+
 where_clause = ""
 
 # Read TimeSeries information into pandas
@@ -107,9 +112,11 @@ ON ts.AQParentID_ = Location.LocationID
 LEFT JOIN parameter 
 ON ts.parameterType_ = parameter.parameterid
 """
+
 if debug:
     print "Reading TimeSeries information into pandas"
     print ts_df_query
+
 ts_df = pd.read_sql(ts_df_query, conn)
 ts_df['TS_Text_ID'] = ts_df['Parameter'] + '.' + ts_df['TS_label'] + '@' + ts_df['LocationCode']
 
@@ -118,11 +125,13 @@ ts_df['TS_Text_ID'] = ts_df['Parameter'] + '.' + ts_df['TS_label'] + '@' + ts_df
 if debug:
     print "Reading the metadata table into pandas using query:"
     print "SELECT * FROM TimeSeriesMeta" + where_clause
+
 meta_df = pd.read_sql("SELECT * FROM TimeSeriesMeta" + where_clause, conn)
 
 # Expand the XML "Blob" of sub-meta-data into columns of its own.
 if debug:
     print 'Expanding the XML "Blobs"'
+
 meta_df['blob_dict'] = meta_df['XmlBlob'].apply(lambda x: ET.fromstring(x).attrib)
 meta_expand = pd.concat([meta_df, pd.DataFrame((d for idx, d in meta_df['blob_dict'].iteritems()))], axis=1)
 full_df = meta_expand.merge(ts_df, on='TimeSeriesID')
@@ -131,6 +140,7 @@ oneblob = ET.fromstring(meta_df.loc[1, 'XmlBlob'])
 # Clean up Data Types
 if debug:
     print 'Cleaning up Data Types'
+
 if full_df['StartTime'].dtype == np.dtype('datetime64[ns]'):
     full_df['startTime_dt'] = pd.to_datetime(full_df['startTime'], errors='ignore', format='%Y-%m-%d %H:%M:%S.%f')
 else:
@@ -149,8 +159,10 @@ if 'modifiedPoints' in full_df.columns:
 # Sort the list
 if debug:
     print 'Sorting'
-full_df.sort_values(by=['TimeSeriesID', 'TypeName', 'DateApplied', 'DateModified'], inplace=True)
+
+full_df.sort_values(by=['TimeSeriesID', 'StartTime', 'TypeName', 'DateApplied', 'DateModified'], inplace=True)
 full_df.fillna(value=-9999, inplace=True)
+
 if debug:
     print "There are %s Total Metadata Records" % len(full_df)
 if Log_to_file:
@@ -187,11 +199,13 @@ if len(values_to_update) > 0:
 
     # Set the minimum time for all the records to the minimum time for the group
     if values_to_update['min_start'].dtype == np.dtype('datetime64[ns]'):
-        values_to_update['min_start_str'] = values_to_update['min_start'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
+        # values_to_update['min_start_str'] = values_to_update['min_start'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
+        values_to_update['min_start_str_long'] = values_to_update['min_start'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
     else:
-        values_to_update['min_start_str'] = values_to_update['min_start'].apply(
+        values_to_update['min_start_str_long'] = values_to_update['min_start'].apply(
             lambda x: "%02d-%02d-%02d %02d:%02d:%02d.%03d" %
             (x.year, x.month, x.day, x.hour, x.minute, x.second, x.microsecond))
+    values_to_update['min_start_str'] = values_to_update['min_start_str_long'].str[0:23]
     values_to_update['new_blob'] = values_to_update['XmlBlob'].replace(
         to_replace='(startTime="[0-9-]{10}\s[0-:."]{13})',
         value='startTime="'+values_to_update['min_start_str']+'"',
@@ -199,11 +213,13 @@ if len(values_to_update) > 0:
 
     # Set the maximum time for all the records to the maximum time for the group
     if values_to_update['max_end'].dtype == np.dtype('datetime64[ns]'):
-        values_to_update['max_end_str'] = values_to_update['max_end'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
+        # values_to_update['max_end_str'] = values_to_update['max_end'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
+        values_to_update['max_end_str_long'] = values_to_update['max_end'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
     else:
-        values_to_update['max_end_str'] = values_to_update['max_end'].apply(
+        values_to_update['max_end_str_long'] = values_to_update['max_end'].apply(
             lambda x: "%02d-%02d-%02d %02d:%02d:%02d.%03d" %
             (x.year, x.month, x.day, x.hour, x.minute, x.second, x.microsecond))
+    values_to_update['max_end_str'] = values_to_update['max_end_str_long'].str[0:23]
     values_to_update['new_blob2'] = values_to_update['new_blob'].replace(
         to_replace='(endTime="[0-9-]{10}\s[0-:."]{13})',
         value='endTime="'+values_to_update['max_end_str']+'"',
@@ -214,7 +230,7 @@ if len(values_to_update) > 0:
         to_replace="'",
         value="''",
         regex=True)
-    
+
     if debug:
         print "Updating %s Records" % len(values_to_update)
     if Log_to_file:
@@ -240,7 +256,7 @@ if len(values_to_update) > 0:
                     print "        Using Query: %s" % sql_update
                 cur.execute(sql_update)
             conn.commit()
-else:    
+else:
     if debug:
         print "No Records to Update"
     if Log_to_file:
@@ -281,8 +297,8 @@ else:
         print "No Duplicate Records to Delete"
     if Log_to_file:
         text_file.write("No Duplicate Records to Delete\n")
-    
-    
+
+
 # Remove junk notes
 junk_notes = ['Correction was edited', 'Correction was marked as undone', 'Correction was marked as done']
 junk_note_df = full_df[(full_df['TypeName'] == 'NOTE') & (full_df['comment'].isin(junk_notes))]
@@ -312,7 +328,97 @@ else:
         print "No Junk Notes to Delete"
     if Log_to_file:
         text_file.write("No Junk Notes to Delete\n")
-        
+
+
+# Remove empty approval codes
+empty_apr_code_df = full_df[(full_df['TypeName'] == 'APPROVALCODE') & (full_df['code'] == '-1') & (full_df['comment'] == '')]
+if len(empty_apr_code_df) > 0:
+    if debug:
+        print "Deleting %s Empty Approval Code Lines" % len(empty_apr_code_df)
+    if Log_to_file:
+        text_file.write("Deleting %s Empty Approval Code Lines\n" % len(empty_apr_code_df))
+    # Doing by Group to help avoid overly massive delete statements
+    junk_note_group = empty_apr_code_df.groupby(['TimeSeriesID'])
+    for name, group in junk_note_group:
+        if len(group) > 0:
+            meta_to_delete_str = str(list(group['MetaID'].values)).replace('UUID(', '').replace(')', '').strip('[]')
+            sql_delete = 'DELETE FROM TimeSeriesMeta WHERE MetaID IN ({0})'.format(meta_to_delete_str)
+            if debug:
+                print "    Deleting %s Empty Approval Code Lines From TimeSeries # %s (%s)"\
+                      % (len(group), name, group['TS_Text_ID'].iloc[0])
+                print "        Using Query: %s" % sql_delete
+
+            if Log_to_file:
+                text_file.write("    Deleting %s Empty Approval Code Lines From TimeSeries # %s (%s)\n"
+                                % (len(group), name, group['TS_Text_ID'].iloc[0]))
+            cur.execute(sql_delete)
+            conn.commit()
+else:
+    if debug:
+        print "No Empty Approval Code Lines to Delete"
+    if Log_to_file:
+        text_file.write("No Empty Approval Code Lines to Delete\n")
+
+
+# Remove empty data grades
+empty_data_grade_df = full_df[(full_df['TypeName'] == 'DATAGRADE') & (full_df['value'] == '-1.000') & (full_df['comment'] == '')]
+if len(empty_data_grade_df) > 0:
+    if debug:
+        print "Deleting %s Empty Data Grades" % len(empty_data_grade_df)
+    if Log_to_file:
+        text_file.write("Deleting %s Empty Data Grades\n" % len(empty_data_grade_df))
+    # Doing by Group to help avoid overly massive delete statements
+    junk_note_group = empty_data_grade_df.groupby(['TimeSeriesID'])
+    for name, group in junk_note_group:
+        if len(group) > 0:
+            meta_to_delete_str = str(list(group['MetaID'].values)).replace('UUID(', '').replace(')', '').strip('[]')
+            sql_delete = 'DELETE FROM TimeSeriesMeta WHERE MetaID IN ({0})'.format(meta_to_delete_str)
+            if debug:
+                print "    Deleting %s Empty Data Grades From TimeSeries # %s (%s)"\
+                      % (len(group), name, group['TS_Text_ID'].iloc[0])
+                print "        Using Query: %s" % sql_delete
+
+            if Log_to_file:
+                text_file.write("    Deleting %s Empty Data Grades From TimeSeries # %s (%s)\n"
+                                % (len(group), name, group['TS_Text_ID'].iloc[0]))
+            cur.execute(sql_delete)
+            conn.commit()
+else:
+    if debug:
+        print "No Empty Data Grades to Delete"
+    if Log_to_file:
+        text_file.write("No Empty Data Grades to Delete\n")
+
+
+# Remove empty interpolation codes
+empty_interp_code_df = full_df[(full_df['TypeName'] == 'INTERPOLATIONCODE') & (full_df['comment'] == '') & (full_df['value'] == -9999)]
+if len(empty_interp_code_df) > 0:
+    if debug:
+        print "Deleting %s Empty Interpolation Code Lines" % len(empty_interp_code_df)
+    if Log_to_file:
+        text_file.write("Deleting %s Empty Interpolation Code Lines\n" % len(empty_interp_code_df))
+    # Doing by Group to help avoid overly massive delete statements
+    junk_note_group = empty_interp_code_df.groupby(['TimeSeriesID'])
+    for name, group in junk_note_group:
+        if len(group) > 0:
+            meta_to_delete_str = str(list(group['MetaID'].values)).replace('UUID(', '').replace(')', '').strip('[]')
+            sql_delete = 'DELETE FROM TimeSeriesMeta WHERE MetaID IN ({0})'.format(meta_to_delete_str)
+            if debug:
+                print "    Deleting %s Empty Interpolation Code Lines From TimeSeries # %s (%s)"\
+                      % (len(group), name, group['TS_Text_ID'].iloc[0])
+                print "        Using Query: %s" % sql_delete
+
+            if Log_to_file:
+                text_file.write("    Deleting %s Empty Interpolation Code Lines From TimeSeries # %s (%s)\n"
+                                % (len(group), name, group['TS_Text_ID'].iloc[0]))
+            cur.execute(sql_delete)
+            conn.commit()
+else:
+    if debug:
+        print "No Empty Interpolation Code Lines to Delete"
+    if Log_to_file:
+        text_file.write("No Empty Interpolation Code Lines to Delete\n")
+
 
 # Close out the database connections
 cur.close()  # close the database cursor
@@ -324,17 +430,28 @@ by_ts_full = pd.DataFrame({'total_meta': full_df.groupby(['TimeSeriesID']).size(
 by_ts_unique = pd.DataFrame({'unique_meta': dedupped_aggr.groupby(['TimeSeriesID']).size()})
 by_ts_dups = pd.DataFrame({'deleted_dups': dups.groupby(['TimeSeriesID']).size()})
 by_ts_junk = pd.DataFrame({'deleted_junk': junk_note_df.groupby(['TimeSeriesID']).size()})
+by_empty_apr_code = pd.DataFrame({'empty_apr_code': empty_apr_code_df.groupby(['TimeSeriesID']).size()})
+by_empty_data_grade = pd.DataFrame({'empty_data_grade': empty_data_grade_df.groupby(['TimeSeriesID']).size()})
+by_empty_interp_code = pd.DataFrame({'empty_interp_code': empty_interp_code_df.groupby(['TimeSeriesID']).size()})
 by_ts_updated = pd.DataFrame({'updated_meta': values_to_update.groupby(['TimeSeriesID']).size()})
-by_ts_counts = pd.concat([by_ts_full, by_ts_unique, by_ts_dups, by_ts_junk, by_ts_updated], axis=1).merge(
+by_ts_counts = pd.concat([by_ts_full, by_ts_unique, by_ts_dups, by_ts_junk, by_empty_apr_code, by_empty_data_grade,
+                          by_empty_interp_code, by_ts_updated], axis=1).merge(
     ts_df[['TimeSeriesID', 'TS_Text_ID']], left_index=True, right_on='TimeSeriesID').fillna(0)
-if Log_to_file:
-    text_file.write("NumericIdentifier, TextIdentifier, TotalMetadata, UniqueMetadata,"
-                    " DeletedDeplicates, DeletedJunk, UpdatedRecords  \n")
+
 for index, row in by_ts_counts.iterrows():
-    if Log_to_file:
-        text_file.write("%s, %s, %s, %s, %s, %s, %s  \n" %
+    if Log_to_file and (row['deleted_dups'] + row['deleted_junk'] + row['updated_meta']
+                            + row['empty_apr_code'] + row['empty_data_grade']  + row['empty_interp_code'] > 1):
+        text_file.write("*********************\n")
+        text_file.write("     Data Summary    \n")
+        text_file.write("*********************\n")
+        text_file.write("NumericIdentifier, TextIdentifier, TotalMetadata, UniqueMetadata,"
+                        " DeletedDeplicates, DeletedJunk, UpdatedRecords  \n")
+        text_file.write("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s  \n" %
                         (row['TimeSeriesID'], row['TS_Text_ID'], row['total_meta'], row['unique_meta'],
-                         row['deleted_dups'], row['deleted_junk'], row['updated_meta']))
+                         row['deleted_dups'], row['deleted_junk'], row['empty_apr_code'], row['empty_data_grade'],
+                         row['empty_interp_code'], row['updated_meta']))
+
+        text_file.write("*********************\n")
 
 
 # Find the date/time the script finished:
